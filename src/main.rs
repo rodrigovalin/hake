@@ -6,23 +6,13 @@ use serde_derive::{Serialize, Deserialize};
 use serde_json::json;
 use base64::encode;
 use std::io::{Read, Write};
+use std::fs::File;
+use std::env;
 
 use std::process::{Command, Stdio};
 use std::str;
 
 static REGISTRY: &str = "268558157000.dkr.ecr.us-east-1.amazonaws.com";
-
-// {
-//     "kind": "Cluster",
-//     "apiVersion": "kind.sigs.k8s.io/v1alpha3",
-//     "nodes": [{"role": "control-plane", "extraMounts": [{"containerPath": "/var/lib/kubelet/config.json", "hostPath": config_file}]}]
-//
-//
-// {
-//      "role": "control-plane",
-//      "extraMounts": [{"containerPath": "/var/lib/kubelet/config.json", "hostPath": config_file}]}}
-
-// {"containerPath": "/var/lib/kubelet/config.json", "hostPath": config_file}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ExtraMount {
@@ -49,9 +39,19 @@ struct DockerLogin {
     Secret: String,
 }
 
-fn main() {
-    println!("{}", get_docker_login().expect("could not get docker login"));
-    println!("{}", get_kind_config(String::from("aoe")).expect("no kind"));
+fn main() -> Result<()> {
+    let docker_login = get_docker_login().expect("could not get docker login");
+
+    // save docker_login
+    let mut docker_config = File::create("docker_config")?;
+    docker_config.write_all(&docker_login.into_bytes())?;
+
+    let path = env::current_dir()?;
+    let host_path = format!("{}/docker_config", &path.to_str().expect("could not get path"));
+
+    let kind_cluster_config = get_kind_config(&host_path).expect("no kind");
+    let mut kind_config = File::create("kind_config")?;
+    kind_config.write_all(&kind_cluster_config.into_bytes())?;
 
     let cmd = Command::new("kind")
         .arg("create")
@@ -65,10 +65,11 @@ fn main() {
 
     println!("hmmmm -> {}", output);
     println!("hmmmm -> {}", stderr);
+
+    Ok(())
 }
 
-/// {"role": "control-plane", "extraMounts": [{"containerPath": "/var/lib/kubelet/config.json", "hostPath": config_file}]}
-fn get_kind_config(dockerconfig: String) -> Result<String> {
+fn get_kind_config(dockerconfig: &str) -> Result<String> {
     let cc = ClusterConfig {
         kind: String::from("kind"),
         apiVersion: String::from("kind.sigs.k8s.io/v1alpha3"),
@@ -78,14 +79,12 @@ fn get_kind_config(dockerconfig: String) -> Result<String> {
                 extraMounts: vec![
                     ExtraMount {
                         containerPath: String::from("/var/lib/kubelet/config.json"),
-                        hostPath: String::from("blabla"),
+                        hostPath: String::from(dockerconfig),
                     }
                 ]
             }
         ]
     };
-
-    // println!("{:?}", cc);
 
     Ok(serde_yaml::to_string(&cc)?)
 }

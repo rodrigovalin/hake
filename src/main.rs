@@ -8,5 +8,7 @@ fn main() -> Result<()> {
     let mut cluster = Kind::new("my-kind", "268558157000.dkr.ecr.us-east-1.amazonaws.com");
     cluster.create()?;
 
+    println!("stopping ");
+    //cluster.delete()?;
     Ok(())
 }

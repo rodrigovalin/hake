@@ -7,7 +7,7 @@ use dirs;
 
 use base64::encode;
 use std::io::{Read, Write};
-use std::fs::File;
+use std::fs::{File, create_dir, remove_dir};
 use std::env;
 
 use std::process::{Command, Stdio};
@@ -111,14 +111,15 @@ impl Kind {
             .expect("could not get docker login");
 
         // save docker_login()
-        let mut docker_config = File::create("docker_config")?;
+        let docker_config_path = format!("{}/docker_config", self.config_dir);
+        let mut docker_config = File::create(&docker_config_path)?;
         docker_config.write_all(&docker_login.into_bytes())?;
 
-        let path = env::current_dir()?;
-        let host_path = format!("{}/docker_config", &path.to_str().expect("could not get path"));
+        let kind_cluster_config = Kind::get_kind_config(&docker_config_path)
+            .expect("no kind");
 
-        let kind_cluster_config = Kind::get_kind_config(&host_path).expect("no kind");
-        let mut kind_config = File::create("kind_config")?;
+        let kind_config_path = format!("{}/kind_config", self.config_dir);
+        let mut kind_config = File::create(&kind_config_path)?;
         kind_config.write_all(&kind_cluster_config.into_bytes())?;
 
         Ok(())
@@ -127,8 +128,11 @@ impl Kind {
     pub fn create(&mut self) -> Result<()> {
         if self.name != "" {
             // remove home_dir
-            self.config_dir = String::from(
+            let home = String::from(
                 dirs::home_dir().expect("user does not have a home").to_str().unwrap());
+            self.config_dir = format!("{}/.nomake/{}", home, self.name);
+            println!("Config dir is {}", self.config_dir);
+            create_dir(&self.config_dir)?;
         }
 
         let mut args = vec!["create", "cluster"];
@@ -157,6 +161,8 @@ impl Kind {
             .arg("cluster")
             .output()
             .expect("could not find kind");
+
+        remove_dir(&self.config_dir)?;
         Ok(())
     }
 

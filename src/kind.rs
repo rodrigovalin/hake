@@ -7,7 +7,7 @@ use dirs;
 
 use base64::encode;
 use std::io::{Read, Write};
-use std::fs::{File, create_dir, remove_dir};
+use std::fs::{File, create_dir, remove_dir_all};
 
 use std::process::{Command, Stdio};
 use std::str;
@@ -155,13 +155,18 @@ impl Kind {
     }
 
     pub fn delete(&self) -> Result<()> {
+        let mut args = vec!["delete", "cluster"];
+        if self.name != "" {
+            args.push("--name");
+            args.push(&self.name);
+        }
+
         let _cmd = Command::new("kind")
-            .arg("delete")
-            .arg("cluster")
+            .args(args)
             .output()
             .expect("could not find kind");
 
-        remove_dir(&self.config_dir)?;
+        remove_dir_all(&self.config_dir)?;
         Ok(())
     }
 

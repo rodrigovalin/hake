@@ -8,7 +8,6 @@ use dirs;
 use base64::encode;
 use std::io::{Read, Write};
 use std::fs::{File, create_dir, remove_dir};
-use std::env;
 
 use std::process::{Command, Stdio};
 use std::str;
@@ -39,11 +38,6 @@ struct DockerLogin {
     Secret: String,
 }
 
-
-// Creating a cluster will store its data into ~/.nomake/<name>/
-// This is:
-//   /docker_config
-//   /kind_config
 pub struct Kind {
     pub name: String,
     pub ecr_repo: String,
@@ -85,7 +79,7 @@ impl Kind {
                     }
                 }
             }
-            ).to_string())
+        ).to_string())
     }
 
     fn get_docker_credentials_from_helper(registry: &str) -> Result<String> {
@@ -126,6 +120,9 @@ impl Kind {
     }
 
     pub fn create(&mut self) -> Result<()> {
+        let mut args = vec!["create", "cluster"];
+        let kubeconfig;
+
         if self.name != "" {
             // remove home_dir
             let home = String::from(
@@ -133,19 +130,21 @@ impl Kind {
             self.config_dir = format!("{}/.nomake/{}", home, self.name);
             println!("Config dir is {}", self.config_dir);
             create_dir(&self.config_dir)?;
+
+            args.push("--name");
+            args.push(&self.name);
+
+            kubeconfig = format!("{}/kubeconfig", self.config_dir);
+            args.push("--kubeconfig");
+            args.push(&kubeconfig);
         }
 
-        let mut args = vec!["create", "cluster"];
-
-        // adds kind config
         let config = &format!("{}/kind_config", self.config_dir);
         if self.ecr_repo != "" {
             self.create_kind_config()?;
             args.push("--config");
             args.push(config);
         }
-
-        // TODO: add kube config
 
         Command::new("kind")
             .args(args)

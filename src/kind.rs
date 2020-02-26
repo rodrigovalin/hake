@@ -8,6 +8,7 @@ use serde_json::json;
 use base64::encode;
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::{Read, Write};
+use std::path::Path;
 
 use std::process::{Command, Stdio};
 use std::str;
@@ -83,7 +84,10 @@ impl Kind {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap();
+            .expect(&format!(
+                "Could not find docker credentials helper for {}",
+                registry
+            ));
 
         cmd.stdin.as_mut().unwrap().write_all(registry.as_bytes())?;
         cmd.wait()?;
@@ -113,7 +117,10 @@ impl Kind {
 
     fn create_dirs(cluster_name: &str) -> Result<()> {
         let home = Kind::get_config_dir()?;
-        create_dir(&home)?;
+
+        if !Path::new(&home).exists() {
+            create_dir(&home)?;
+        }
         create_dir(format!("{}/{}", &home, cluster_name))?;
 
         Ok(())
@@ -128,6 +135,10 @@ impl Kind {
         );
 
         Ok(format!("{}/.nomake", home))
+    }
+
+    pub fn configure_private_registry(&mut self, reg: Option<String>) {
+        self.ecr_repo = reg;
     }
 
     pub fn create(&mut self) -> Result<()> {

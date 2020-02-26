@@ -12,6 +12,10 @@ enum Opt {
     Create {
         #[structopt(long)]
         name: String,
+
+        /// Configures access to an ECR private registry
+        #[structopt(long)]
+        ecr: Option<String>,
     },
     /// Deletes a kind cluster
     Delete {
@@ -20,8 +24,10 @@ enum Opt {
     },
 }
 
-fn create(name: String) -> Result<()> {
+fn create(name: String, ecr: Option<String>) -> Result<()> {
     let mut cluster = Kind::new(&name);
+    cluster.configure_private_registry(ecr);
+
     cluster.create()
 }
 
@@ -36,7 +42,7 @@ fn main() -> Result<()> {
     println!("{:?}", matches);
 
     match matches {
-        Opt::Create { name } => create(name),
+        Opt::Create { name, ecr } => create(name, ecr),
         Opt::Delete { name } => delete(name),
     }
 }

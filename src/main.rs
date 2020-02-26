@@ -10,6 +10,7 @@ use structopt::StructOpt;
 enum Opt {
     /// Creates a kind cluster
     Create {
+        /// Name of the cluster
         #[structopt(long)]
         name: String,
 
@@ -19,6 +20,7 @@ enum Opt {
     },
     /// Deletes a kind cluster
     Delete {
+        /// Name of the cluster
         #[structopt(long)]
         name: String,
     },

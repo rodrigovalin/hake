@@ -1,8 +1,8 @@
 use anyhow::Result;
 mod kind;
 
-use structopt::StructOpt;
 use crate::kind::Kind;
+use structopt::StructOpt;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Kind")]
@@ -20,15 +20,15 @@ enum Opt {
     },
 }
 
-fn create(name: String) {
-    let mut cluster = Kind::new(&name, "268558157000.dkr.ecr.us-east-1.amazonaws.com");
-    cluster.create();
+fn create(name: String) -> Result<()> {
+    let mut cluster = Kind::new(&name);
+    cluster.create()
 }
 
-fn delete(name: String) {
-    let mut cluster = Kind::new(&name, "268558157000.dkr.ecr.us-east-1.amazonaws.com");
+fn delete(name: String) -> Result<()> {
+    let cluster = Kind::new(&name);
     println!("deleting cluster");
-    cluster.delete();
+    cluster.delete()
 }
 
 fn main() -> Result<()> {
@@ -36,9 +36,7 @@ fn main() -> Result<()> {
     println!("{:?}", matches);
 
     match matches {
-        Opt::Create{name} => create(name),
-        Opt::Delete{name} => delete(name),
+        Opt::Create { name } => create(name),
+        Opt::Delete { name } => delete(name),
     }
-
-    Ok(())
 }

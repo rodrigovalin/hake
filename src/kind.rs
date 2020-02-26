@@ -147,9 +147,6 @@ impl Kind {
         let mut args = vec!["create", "cluster"];
         let kubeconfig;
 
-        let home = Kind::get_config_dir()?;
-        self.config_dir = format!("{}/{}", home, self.name);
-
         args.push("--name");
         args.push(&self.name);
 
@@ -189,10 +186,16 @@ impl Kind {
     }
 
     pub fn new(name: &str) -> Kind {
+        let config = Kind::get_config_dir();
+        if config.is_err() {
+            panic!("User has no home!!");
+        }
+        let home = config.unwrap();
+
         Kind {
             name: String::from(name),
             ecr_repo: None,
-            config_dir: String::new(),
+            config_dir: format!("{}/{}", home, name),
         }
     }
 }

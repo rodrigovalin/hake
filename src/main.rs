@@ -24,6 +24,12 @@ enum Opt {
         #[structopt(long)]
         name: String,
     },
+    /// Get cluster configuration
+    Config {
+        /// name of the cluster
+        #[structopt(long)]
+        name: String,
+    }
 }
 
 fn create(name: String, ecr: Option<String>) -> Result<()> {
@@ -39,12 +45,17 @@ fn delete(name: String) -> Result<()> {
     cluster.delete()
 }
 
+fn config(name: String) -> Result<()> {
+    let cluster = Kind::new(&name);
+    Ok(println!("{}", cluster.get_kube_config()))
+}
+
 fn main() -> Result<()> {
     let matches = Opt::from_args();
-    println!("{:?}", matches);
 
     match matches {
         Opt::Create { name, ecr } => create(name, ecr),
         Opt::Delete { name } => delete(name),
+        Opt::Config { name } => config(name)
     }
 }

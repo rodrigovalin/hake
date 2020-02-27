@@ -137,6 +137,10 @@ impl Kind {
         Ok(format!("{}/.nomake", home))
     }
 
+    pub fn get_kube_config(self) -> String {
+        format!("{}/kubeconfig", self.config_dir)
+    }
+
     pub fn configure_private_registry(&mut self, reg: Option<String>) {
         self.ecr_repo = reg;
     }

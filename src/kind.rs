@@ -65,7 +65,7 @@ impl Kind {
         let creds = Kind::get_docker_credentials_from_helper(registry)?;
 
         let login: DockerLogin = serde_json::from_str(&creds)?;
-        let encoded = encode(&format!("{}:{}", login.Secret, login.Username));
+        let encoded = encode(&format!("{}:{}", login.Username, login.Secret));
 
         Ok(json!({
                 "auths": {

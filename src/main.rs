@@ -1,6 +1,9 @@
 use anyhow::Result;
 mod kind;
 
+use std::fs;
+use std::path::Path;
+
 use crate::kind::Kind;
 use structopt::StructOpt;
 
@@ -29,7 +32,8 @@ enum Opt {
         /// name of the cluster
         #[structopt(long)]
         name: String,
-    }
+    },
+    List,
 }
 
 fn create(name: String, ecr: Option<String>) -> Result<()> {
@@ -50,12 +54,26 @@ fn config(name: String) -> Result<()> {
     Ok(println!("{}", cluster.get_kube_config()))
 }
 
+fn list() {
+    match Kind::get_config_dir() {
+        Ok(config) => {
+            let config = Path::new(&config);
+            for entry in fs::read_dir(config).expect("could not read dir") {
+                let entry = entry.unwrap();
+                println!("{}", entry.file_name().to_str().unwrap());
+            }
+        },
+        Err(_) => {}
+    };
+}
+
 fn main() -> Result<()> {
     let matches = Opt::from_args();
 
     match matches {
         Opt::Create { name, ecr } => create(name, ecr),
         Opt::Delete { name } => delete(name),
-        Opt::Config { name } => config(name)
+        Opt::Config { name } => config(name),
+        Opt::List => Ok(list()),
     }
 }

@@ -126,7 +126,7 @@ impl Kind {
         Ok(())
     }
 
-    fn get_config_dir() -> Result<String> {
+    pub fn get_config_dir() -> Result<String> {
         let home = String::from(
             dirs::home_dir()
                 .expect("User does not have a home")

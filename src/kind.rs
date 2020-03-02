@@ -9,9 +9,14 @@ use base64::encode;
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
-
 use std::process::{Command, Stdio};
 use std::str;
+use std::collections::HashMap;
+use std::vec::Vec;
+
+use bollard::Docker;
+use bollard::container::ListContainersOptions;
+use tokio::runtime::Runtime;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ExtraMount {
@@ -59,6 +64,52 @@ impl Kind {
         };
 
         Ok(serde_yaml::to_string(&cc)?)
+    }
+
+    /// Gets the Kind cluster name from the Docker container name.
+    fn get_cluster_name(container_name: &str) -> Option<String> {
+        if !container_name.ends_with("-control-plane") {
+            None
+        } else {
+            let parts: Vec<&str> = container_name.split("-control-plane").collect();
+            let part = parts.get(0).unwrap().to_string();
+
+            if &part[0..1] == "/" {
+                Some(String::from(&part[1..]))
+            } else {
+                Some(part)
+            }
+        }
+    }
+
+    // Removes every entry in ~/.nomake that does not have a corresponding kind docker container.
+    async fn async_get_containers() -> Result<Vec<String>> {
+        let docker = Docker::connect_with_local_defaults()?;
+        let mut filter = HashMap::new();
+        filter.insert(String::from("status"), vec![String::from("running")]);
+        let containers = &docker.list_containers(Some(ListContainersOptions{
+            all: true,
+            filters: filter,
+            ..Default::default()
+        })).await?;
+
+        let mut kind_containers = Vec::new();
+        for container in containers {
+            if container.image.starts_with("kindest/node") {
+                let name = String::from(container.names.get(0).unwrap());
+                match Kind::get_cluster_name(&name) {
+                    Some(name) => kind_containers.push(name),
+                    None => continue,
+                }
+            }
+        }
+
+        Ok(kind_containers)
+    }
+
+    pub fn get_kind_containers() -> Result<Vec<String>> {
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(Kind::async_get_containers())
     }
 
     fn get_docker_login(registry: &str) -> Result<String> {
@@ -175,10 +226,8 @@ impl Kind {
 
     pub fn delete(&self) -> Result<()> {
         let mut args = vec!["delete", "cluster"];
-        if self.name != "" {
-            args.push("--name");
-            args.push(&self.name);
-        }
+        args.push("--name");
+        args.push(&self.name);
 
         let _cmd = Command::new("kind")
             .args(args)

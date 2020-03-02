@@ -3,6 +3,7 @@ mod kind;
 
 use std::fs;
 use std::path::Path;
+use std::vec::Vec;
 
 use crate::kind::Kind;
 use structopt::StructOpt;
@@ -33,7 +34,14 @@ enum Opt {
         #[structopt(long)]
         name: String,
     },
+    /// Display list of known clusters
     List,
+    /// Removes clusters that are not reachable anymore
+    Clean {
+        /// Force removal of directories
+        #[structopt(long)]
+        force: bool,
+    }
 }
 
 fn create(name: String, ecr: Option<String>) -> Result<()> {
@@ -54,17 +62,46 @@ fn config(name: String) -> Result<()> {
     Ok(println!("{}", cluster.get_kube_config()))
 }
 
-fn list() {
+fn all_clusters() -> Vec<String> {
+    let mut clusters = Vec::new();
     match Kind::get_config_dir() {
         Ok(config) => {
             let config = Path::new(&config);
             for entry in fs::read_dir(config).expect("could not read dir") {
                 let entry = entry.unwrap();
-                println!("{}", entry.file_name().to_str().unwrap());
+                let entry = entry.file_name().to_str().unwrap().to_string();
+                clusters.push(entry);
             }
         },
         Err(_) => {}
     };
+
+    clusters
+}
+
+fn list() {
+    for cluster in all_clusters() {
+        println!("{}", cluster);
+    }
+}
+
+fn clean(force: bool) -> Result<()> {
+    let kc = Kind::get_kind_containers()?;
+    let clusters = all_clusters();
+
+    for cluster in clusters {
+        if !kc.iter().any(|c| *c == cluster) {
+            let dir = format!("{}/{}", Kind::get_config_dir()?, cluster);
+            if force {
+                println!("Removing {}", dir);
+                fs::remove_dir_all(dir)?
+            } else {
+                println!("Not removing {}. Use --force", dir);
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -74,6 +111,7 @@ fn main() -> Result<()> {
         Opt::Create { name, ecr } => create(name, ecr),
         Opt::Delete { name } => delete(name),
         Opt::Config { name } => config(name),
-        Opt::List => Ok(list()),
+        Opt::List => { Ok(list()) },
+        Opt::Clean { force } => clean(force),
     }
 }

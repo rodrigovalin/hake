@@ -52,10 +52,10 @@ pub struct Kind {
 }
 
 impl Kind {
-    fn get_kind_config(self, dockerconfig: &str) -> Result<String> {
-        let mut containerd_patches: Vec<String>;
-        match self.local_registry {
-            Some(ip) => containerd_patches.push(Kind::get_containerd_config_patch_to_local_registry(&ip)),
+    fn get_kind_config(&self, dockerconfig: &str) -> Result<String> {
+        let mut containerd_patches = String::new();
+        match &self.local_registry {
+            Some(ip) => containerd_patches = Kind::get_containerd_config_patch_to_local_registry(&ip),
             None => {},
         }
         let cc = ClusterConfig {
@@ -68,7 +68,7 @@ impl Kind {
                     hostPath: String::from(dockerconfig),
                 }],
             }],
-            containerdConfigPatches: containerd_patches,
+            containerdConfigPatches: vec![containerd_patches],
         };
 
         Ok(serde_yaml::to_string(&cc)?)
@@ -214,8 +214,8 @@ impl Kind {
         let args = vec!["run", "-d", "--restart=always", "-p", "5000:5000", "--name", "local-registry"];
 
         // the following command returns a handle to the child, but it is spawned as a different process.
-        let registry = Command::new("docker")
-            .args(args)
+        let _registry = Command::new("docker")
+            .args(&args)
             .spawn()
             .expect("Could not start local Docker registry");
 

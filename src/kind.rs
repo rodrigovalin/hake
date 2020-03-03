@@ -52,26 +52,45 @@ pub struct Kind {
 }
 
 impl Kind {
-    fn get_kind_config(&self, dockerconfig: &str) -> Result<String> {
-        let mut containerd_patches = String::new();
-        match &self.local_registry {
-            Some(ip) => containerd_patches = Kind::get_containerd_config_patch_to_local_registry(&ip),
-            None => {},
-        }
-        let cc = ClusterConfig {
+    fn get_kind_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> Result<String> {
+        let mut cc = ClusterConfig {
             kind: String::from("Cluster"),
             apiVersion: String::from("kind.sigs.k8s.io/v1alpha3"),
-            nodes: vec![Node {
-                role: String::from("control-plane"),
-                extraMounts: vec![ExtraMount {
-                    containerPath: String::from("/var/lib/kubelet/config.json"),
-                    hostPath: String::from(dockerconfig),
-                }],
-            }],
-            containerdConfigPatches: vec![containerd_patches],
+            nodes: vec![],
+            containerdConfigPatches: vec![],
         };
 
-        Ok(serde_yaml::to_string(&cc)?)
+        match ecr {
+            Some(ecr) => {
+                let docker_path = self.create_docker_ecr_config_file(ecr.to_string());
+                match docker_path {
+                    Ok(docker_path) => {
+                        cc.nodes = vec![Node {
+                            role: String::from("control-plane"),
+                            extraMounts: vec![ExtraMount {
+                                containerPath: String::from("/var/lib/kubelet/config.json"),
+                                hostPath: self.create_docker_ecr_config_file(docker_path)?,
+                            }],
+                        }];
+                    },
+                    _ => {},
+                }
+            },
+            None => {},
+        }
+
+        match local_reg {
+            Some(ip) => cc.containerdConfigPatches = vec![Kind::get_containerd_config_patch_to_local_registry(&ip)],
+            None => {},
+        }
+
+        let kind_cluster_config = serde_yaml::to_string(&cc)?;
+        
+        let kind_config_path = format!("{}/kind_config", self.config_dir);
+        let mut kind_config = File::create(&kind_config_path)?;
+        kind_config.write_all(&kind_cluster_config.into_bytes())?;
+
+        Ok(kind_config_path)
     }
 
     fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
@@ -163,7 +182,7 @@ impl Kind {
         Ok(output)
     }
 
-    fn create_kind_config(&self, ecr: String) -> Result<String> {
+    fn create_docker_ecr_config_file(&self, ecr: String) -> Result<String> {
         let docker_login = Kind::get_docker_login(&ecr).expect("could not get docker login");
 
         // save docker_login()
@@ -171,13 +190,7 @@ impl Kind {
         let mut docker_config = File::create(&docker_config_path)?;
         docker_config.write_all(&docker_login.into_bytes())?;
 
-        let kind_cluster_config = self.get_kind_config(&docker_config_path).expect("no kind");
-
-        let kind_config_path = format!("{}/kind_config", self.config_dir);
-        let mut kind_config = File::create(&kind_config_path)?;
-        kind_config.write_all(&kind_cluster_config.into_bytes())?;
-
-        Ok(kind_config_path)
+        Ok(docker_config_path)
     }
 
     fn create_dirs(cluster_name: &str) -> Result<()> {
@@ -231,7 +244,7 @@ impl Kind {
         self.local_registry = Kind::start_local_registry();
     }
 
-    pub fn create(&mut self) -> Result<()> {
+    pub fn create(self) -> Result<()> {
         Kind::create_dirs(&self.name)?;
 
         let mut args = vec!["create", "cluster"];
@@ -244,15 +257,9 @@ impl Kind {
         args.push("--kubeconfig");
         args.push(&kubeconfig);
 
-        let config;
-        match &self.ecr_repo {
-            Some(ecr) => {
-                config = self.create_kind_config(ecr.to_string())?.clone();
-                args.push("--config");
-                args.push(&config);
-            }
-            None => {}
-        }
+        args.push("--config");
+        let kind_config = self.get_kind_config(&self.ecr_repo, &self.local_registry).expect("could not not bla bla");
+        args.push(&kind_config);
 
         Command::new("kind").args(args).output()?;
 

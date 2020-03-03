@@ -35,6 +35,7 @@ struct ClusterConfig {
     kind: String,
     apiVersion: String,
     nodes: Vec<Node>,
+    containerdConfigPatches: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -47,10 +48,16 @@ pub struct Kind {
     pub name: String,
     pub ecr_repo: Option<String>,
     config_dir: String,
+    local_registry: Option<String>,
 }
 
 impl Kind {
-    fn get_kind_config(dockerconfig: &str) -> Result<String> {
+    fn get_kind_config(self, dockerconfig: &str) -> Result<String> {
+        let mut containerd_patches: Vec<String>;
+        match self.local_registry {
+            Some(ip) => containerd_patches.push(Kind::get_containerd_config_patch_to_local_registry(&ip)),
+            None => {},
+        }
         let cc = ClusterConfig {
             kind: String::from("Cluster"),
             apiVersion: String::from("kind.sigs.k8s.io/v1alpha3"),
@@ -61,9 +68,16 @@ impl Kind {
                     hostPath: String::from(dockerconfig),
                 }],
             }],
+            containerdConfigPatches: containerd_patches,
         };
 
         Ok(serde_yaml::to_string(&cc)?)
+    }
+
+    fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
+        format!(r#"|-
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+  endpoint = ["http://{}:5000"]"#, ip)
     }
 
     /// Gets the Kind cluster name from the Docker container name.
@@ -157,7 +171,7 @@ impl Kind {
         let mut docker_config = File::create(&docker_config_path)?;
         docker_config.write_all(&docker_login.into_bytes())?;
 
-        let kind_cluster_config = Kind::get_kind_config(&docker_config_path).expect("no kind");
+        let kind_cluster_config = self.get_kind_config(&docker_config_path).expect("no kind");
 
         let kind_config_path = format!("{}/kind_config", self.config_dir);
         let mut kind_config = File::create(&kind_config_path)?;
@@ -194,6 +208,27 @@ impl Kind {
 
     pub fn configure_private_registry(&mut self, reg: Option<String>) {
         self.ecr_repo = reg;
+    }
+
+    fn start_local_registry() -> Option<String> {
+        let args = vec!["run", "-d", "--restart=always", "-p", "5000:5000", "--name", "local-registry"];
+
+        // the following command returns a handle to the child, but it is spawned as a different process.
+        let registry = Command::new("docker")
+            .args(args)
+            .spawn()
+            .expect("Could not start local Docker registry");
+
+        let ip = Command::new("docker")
+            .args(vec!["inspect", "-f", "'{{.NetworkSettings.IPAddress}}'", "local-registry"])
+            .output()
+            .expect("Could not get IP from local registry");
+
+        Some(String::from_utf8(ip.stdout).unwrap())
+    }
+
+    pub fn use_local_registry(&mut self) {
+        self.local_registry = Kind::start_local_registry();
     }
 
     pub fn create(&mut self) -> Result<()> {
@@ -249,6 +284,7 @@ impl Kind {
             name: String::from(name),
             ecr_repo: None,
             config_dir: format!("{}/{}", home, name),
+            local_registry: None,
         }
     }
 }

@@ -21,6 +21,10 @@ enum Opt {
         /// Configures access to an ECR private registry
         #[structopt(long)]
         ecr: Option<String>,
+
+        /// Configure access to local Docker registry
+        #[structopt(long)]
+        use_local_registry: bool,
     },
     /// Deletes a kind cluster
     Delete {
@@ -41,12 +45,16 @@ enum Opt {
         /// Force removal of directories
         #[structopt(long)]
         force: bool,
-    }
+    },
 }
 
-fn create(name: String, ecr: Option<String>) -> Result<()> {
+fn create(name: String, ecr: Option<String>, use_local_registry: bool) -> Result<()> {
     let mut cluster = Kind::new(&name);
     cluster.configure_private_registry(ecr);
+
+    if use_local_registry {
+        cluster.use_local_registry();
+    }
 
     cluster.create()
 }
@@ -72,7 +80,7 @@ fn all_clusters() -> Vec<String> {
                 let entry = entry.file_name().to_str().unwrap().to_string();
                 clusters.push(entry);
             }
-        },
+        }
         Err(_) => {}
     };
 
@@ -108,10 +116,14 @@ fn main() -> Result<()> {
     let matches = Opt::from_args();
 
     match matches {
-        Opt::Create { name, ecr } => create(name, ecr),
+        Opt::Create {
+            name,
+            ecr,
+            use_local_registry,
+        } => create(name, ecr, use_local_registry),
         Opt::Delete { name } => delete(name),
         Opt::Config { name } => config(name),
-        Opt::List => { Ok(list()) },
+        Opt::List => Ok(list()),
         Opt::Clean { force } => clean(force),
     }
 }

@@ -55,7 +55,7 @@ impl Kind {
     fn get_kind_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> Result<String> {
         let mut cc = ClusterConfig {
             kind: String::from("Cluster"),
-            apiVersion: String::from("kind.sigs.k8s.io/v1alpha3"),
+            apiVersion: String::from("kind.x-k8s.io/v1alpha4"),
             nodes: vec![],
             containerdConfigPatches: vec![],
         };
@@ -94,9 +94,9 @@ impl Kind {
     }
 
     fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
-        format!(r#"|-
+        format!(r#"|
 [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-  endpoint = ["http://{}:5000"]"#, ip)
+  endpoint = ["http://{}:5000"]"#, ip.trim())
     }
 
     /// Gets the Kind cluster name from the Docker container name.
@@ -224,13 +224,11 @@ impl Kind {
     }
 
     fn start_local_registry() -> Option<String> {
-        let args = vec!["run", "-d", "--restart=always", "-p", "5000:5000", "--name", "local-registry"];
-
         // the following command returns a handle to the child, but it is spawned as a different process.
-        let _registry = Command::new("docker")
-            .args(&args)
-            .spawn()
-            .expect("Could not start local Docker registry");
+        // let _registry = Command::new("docker")
+        //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
+        //     .spawn()
+        //     .expect("Could not start local Docker registry");
 
         let ip = Command::new("docker")
             .args(vec!["inspect", "-f", "'{{.NetworkSettings.IPAddress}}'", "local-registry"])
@@ -260,6 +258,8 @@ impl Kind {
         args.push("--config");
         let kind_config = self.get_kind_config(&self.ecr_repo, &self.local_registry).expect("could not not bla bla");
         args.push(&kind_config);
+
+        println!("Running kind with: {:?}", args);
 
         Command::new("kind").args(args).output()?;
 

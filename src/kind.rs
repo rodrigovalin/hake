@@ -270,7 +270,7 @@ impl Kind {
         args.push("--config");
         let kind_config = self
             .get_kind_config(&self.ecr_repo, &self.local_registry)
-            .expect("could not not bla bla");
+            .expect("could not get kind configuration");
         args.push(&kind_config);
 
         // println!("Running kind with: {:?}", args);

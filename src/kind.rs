@@ -6,16 +6,16 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
 
 use base64::encode;
+use std::collections::HashMap;
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::str;
-use std::collections::HashMap;
 use std::vec::Vec;
 
-use bollard::Docker;
 use bollard::container::ListContainersOptions;
+use bollard::Docker;
 use tokio::runtime::Runtime;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -35,6 +35,7 @@ struct ClusterConfig {
     kind: String,
     apiVersion: String,
     nodes: Vec<Node>,
+    containerdConfigPatches: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -47,23 +48,60 @@ pub struct Kind {
     pub name: String,
     pub ecr_repo: Option<String>,
     config_dir: String,
+    local_registry: Option<String>,
 }
 
 impl Kind {
-    fn get_kind_config(dockerconfig: &str) -> Result<String> {
-        let cc = ClusterConfig {
-            kind: String::from("Cluster"),
-            apiVersion: String::from("kind.sigs.k8s.io/v1alpha3"),
-            nodes: vec![Node {
-                role: String::from("control-plane"),
-                extraMounts: vec![ExtraMount {
-                    containerPath: String::from("/var/lib/kubelet/config.json"),
-                    hostPath: String::from(dockerconfig),
-                }],
+    fn kind_extra_mount(role: &str, container_path: &str, host_path: &str) -> Vec<Node> {
+        vec![Node {
+            role: String::from(role),
+            extraMounts: vec![ExtraMount {
+                containerPath: String::from(container_path),
+                hostPath: String::from(host_path),
             }],
+        }]
+    }
+
+    fn get_kind_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> Result<String> {
+        let mut cc = ClusterConfig {
+            kind: String::from("Cluster"),
+            apiVersion: String::from("kind.x-k8s.io/v1alpha4"),
+            nodes: vec![],
+            containerdConfigPatches: vec![],
         };
 
-        Ok(serde_yaml::to_string(&cc)?)
+        if let Some(ecr) = ecr {
+            if let Ok(docker_path) = self.create_docker_ecr_config_file(ecr) {
+                cc.nodes = Kind::kind_extra_mount(
+                    "control-plane",
+                    "/var/lib/kubelet/config.json",
+                    &docker_path,
+                );
+            }
+        }
+
+        if let Some(local_reg) = local_reg {
+            cc.containerdConfigPatches = vec![Kind::get_containerd_config_patch_to_local_registry(
+                local_reg,
+            )];
+        }
+
+        let kind_cluster_config = serde_yaml::to_string(&cc)?;
+
+        let kind_config_path = format!("{}/kind_config", self.config_dir);
+        let mut kind_config = File::create(&kind_config_path)?;
+        kind_config.write_all(&kind_cluster_config.into_bytes())?;
+
+        Ok(kind_config_path)
+    }
+
+    fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
+        format!(
+            r#"
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+  endpoint = ["http://{}:5000"]"#,
+            ip.trim()
+        )
     }
 
     /// Gets the Kind cluster name from the Docker container name.
@@ -87,11 +125,13 @@ impl Kind {
         let docker = Docker::connect_with_local_defaults()?;
         let mut filter = HashMap::new();
         filter.insert(String::from("status"), vec![String::from("running")]);
-        let containers = &docker.list_containers(Some(ListContainersOptions{
-            all: true,
-            filters: filter,
-            ..Default::default()
-        })).await?;
+        let containers = &docker
+            .list_containers(Some(ListContainersOptions {
+                all: true,
+                filters: filter,
+                ..Default::default()
+            }))
+            .await?;
 
         let mut kind_containers = Vec::new();
         for container in containers {
@@ -149,21 +189,15 @@ impl Kind {
         Ok(output)
     }
 
-    fn create_kind_config(&self, ecr: String) -> Result<String> {
-        let docker_login = Kind::get_docker_login(&ecr).expect("could not get docker login");
+    fn create_docker_ecr_config_file(&self, ecr: &str) -> Result<String> {
+        let docker_login = Kind::get_docker_login(ecr).expect("could not get docker login");
 
         // save docker_login()
         let docker_config_path = format!("{}/docker_config", self.config_dir);
         let mut docker_config = File::create(&docker_config_path)?;
         docker_config.write_all(&docker_login.into_bytes())?;
 
-        let kind_cluster_config = Kind::get_kind_config(&docker_config_path).expect("no kind");
-
-        let kind_config_path = format!("{}/kind_config", self.config_dir);
-        let mut kind_config = File::create(&kind_config_path)?;
-        kind_config.write_all(&kind_cluster_config.into_bytes())?;
-
-        Ok(kind_config_path)
+        Ok(docker_config_path)
     }
 
     fn create_dirs(cluster_name: &str) -> Result<()> {
@@ -196,7 +230,31 @@ impl Kind {
         self.ecr_repo = reg;
     }
 
-    pub fn create(&mut self) -> Result<()> {
+    fn start_local_registry() -> Option<String> {
+        // the following command returns a handle to the child, but it is spawned as a different process.
+        // let _registry = Command::new("docker")
+        //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
+        //     .spawn()
+        //     .expect("Could not start local Docker registry");
+
+        let ip = Command::new("docker")
+            .args(vec![
+                "inspect",
+                "-f",
+                "{{.NetworkSettings.IPAddress}}",
+                "local-registry",
+            ])
+            .output()
+            .expect("Could not get IP from local registry");
+
+        Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
+    }
+
+    pub fn use_local_registry(&mut self) {
+        self.local_registry = Kind::start_local_registry();
+    }
+
+    pub fn create(self) -> Result<()> {
         Kind::create_dirs(&self.name)?;
 
         let mut args = vec!["create", "cluster"];
@@ -209,16 +267,13 @@ impl Kind {
         args.push("--kubeconfig");
         args.push(&kubeconfig);
 
-        let config;
-        match &self.ecr_repo {
-            Some(ecr) => {
-                config = self.create_kind_config(ecr.to_string())?.clone();
-                args.push("--config");
-                args.push(&config);
-            }
-            None => {}
-        }
+        args.push("--config");
+        let kind_config = self
+            .get_kind_config(&self.ecr_repo, &self.local_registry)
+            .expect("could not get kind configuration");
+        args.push(&kind_config);
 
+        // println!("Running kind with: {:?}", args);
         Command::new("kind").args(args).output()?;
 
         Ok(())
@@ -249,6 +304,7 @@ impl Kind {
             name: String::from(name),
             ecr_repo: None,
             config_dir: format!("{}/{}", home, name),
+            local_registry: None,
         }
     }
 }

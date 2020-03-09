@@ -97,7 +97,7 @@ impl Kind {
 
     fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
         format!(
-            r#"|
+            r#"
 [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
   endpoint = ["http://{}:5000"]"#,
             ip.trim()
@@ -241,13 +241,13 @@ impl Kind {
             .args(vec![
                 "inspect",
                 "-f",
-                "'{{.NetworkSettings.IPAddress}}'",
+                "{{.NetworkSettings.IPAddress}}",
                 "local-registry",
             ])
             .output()
             .expect("Could not get IP from local registry");
 
-        Some(String::from_utf8(ip.stdout).unwrap())
+        Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
     }
 
     pub fn use_local_registry(&mut self) {
@@ -273,8 +273,7 @@ impl Kind {
             .expect("could not not bla bla");
         args.push(&kind_config);
 
-        println!("Running kind with: {:?}", args);
-
+        // println!("Running kind with: {:?}", args);
         Command::new("kind").args(args).output()?;
 
         Ok(())

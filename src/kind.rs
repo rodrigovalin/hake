@@ -308,3 +308,22 @@ impl Kind {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::kind::Kind;
+
+    #[test]
+    fn test_new() {
+        // TODO: test configuration on home directory.
+        let k = Kind::new("test");
+
+        let home = dirs::home_dir()
+            .unwrap();
+
+        assert_eq!(k.name, "test");
+        assert_eq!(k.ecr_repo, None);
+        assert_eq!(k.config_dir, format!("{}/.nomake/test", home.to_str().unwrap()));
+        assert_eq!(k.local_registry, None);
+    }
+}

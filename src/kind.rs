@@ -110,7 +110,7 @@ impl Kind {
             None
         } else {
             let parts: Vec<&str> = container_name.split("-control-plane").collect();
-            let part = parts.get(0).unwrap().to_string();
+            let part = (*parts.get(0).unwrap()).to_string();
 
             if &part[0..1] == "/" {
                 Some(String::from(&part[1..]))
@@ -175,10 +175,7 @@ impl Kind {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .expect(&format!(
-                "Could not find docker credentials helper for {}",
-                registry
-            ));
+            .unwrap_or_else(|_| panic!("Could not find docker credentials helper for {}", registry));
 
         cmd.stdin.as_mut().unwrap().write_all(registry.as_bytes())?;
         cmd.wait()?;
@@ -236,6 +233,7 @@ impl Kind {
         //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
         //     .spawn()
         //     .expect("Could not start local Docker registry");
+
 
         let ip = Command::new("docker")
             .args(vec![
@@ -325,5 +323,12 @@ mod tests {
         assert_eq!(k.ecr_repo, None);
         assert_eq!(k.config_dir, format!("{}/.nomake/test", home.to_str().unwrap()));
         assert_eq!(k.local_registry, None);
+    }
+
+    #[test]
+    fn test_get_cluster_name() {
+        assert_eq!(Kind::get_cluster_name("not-us"), None);
+        assert_eq!(Kind::get_cluster_name("this-is-us-control-plane"), Some(String::from("this-is-us")));
+        assert_eq!(Kind::get_cluster_name("/this-is-us-control-plane"), Some(String::from("this-is-us")));
     }
 }

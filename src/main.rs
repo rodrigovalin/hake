@@ -24,7 +24,7 @@ enum Opt {
 
         /// Configure access to local Docker registry
         #[structopt(long)]
-        use_local_registry: bool,
+        use_local_registry: Option<String>,
     },
     /// Deletes a kind cluster
     Delete {
@@ -48,12 +48,12 @@ enum Opt {
     },
 }
 
-fn create(name: String, ecr: Option<String>, use_local_registry: bool) -> Result<()> {
+fn create(name: String, ecr: Option<String>, use_local_registry: Option<String>) -> Result<()> {
     let mut cluster = Kind::new(&name);
     cluster.configure_private_registry(ecr);
 
-    if use_local_registry {
-        cluster.use_local_registry();
+    if let Some(container_name) = use_local_registry {
+        cluster.use_local_registry(&container_name)
     }
 
     cluster.create()

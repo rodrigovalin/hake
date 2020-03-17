@@ -227,7 +227,7 @@ impl Kind {
         self.ecr_repo = reg;
     }
 
-    fn start_local_registry() -> Option<String> {
+    fn find_local_registry(container_name: &str) -> Option<String> {
         // the following command returns a handle to the child, but it is spawned as a different process.
         // let _registry = Command::new("docker")
         //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
@@ -240,7 +240,7 @@ impl Kind {
                 "inspect",
                 "-f",
                 "{{.NetworkSettings.IPAddress}}",
-                "local-registry",
+                container_name,
             ])
             .output()
             .expect("Could not get IP from local registry");
@@ -248,8 +248,8 @@ impl Kind {
         Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
     }
 
-    pub fn use_local_registry(&mut self) {
-        self.local_registry = Kind::start_local_registry();
+    pub fn use_local_registry(&mut self, container_name: &str) {
+        self.local_registry = Kind::find_local_registry(container_name);
     }
 
     pub fn create(self) -> Result<()> {

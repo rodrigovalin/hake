@@ -24,7 +24,7 @@ enum Opt {
 
         /// Configure access to local Docker registry
         #[structopt(long)]
-        use_local_registry: bool,
+        use_local_registry: Option<String>,
     },
     /// Deletes a kind cluster
     Delete {
@@ -48,12 +48,12 @@ enum Opt {
     },
 }
 
-fn create(name: String, ecr: Option<String>, use_local_registry: bool) -> Result<()> {
+fn create(name: String, ecr: Option<String>, use_local_registry: Option<String>) -> Result<()> {
     let mut cluster = Kind::new(&name);
     cluster.configure_private_registry(ecr);
 
-    if use_local_registry {
-        cluster.use_local_registry();
+    if let Some(container_name) = use_local_registry {
+        cluster.use_local_registry(&container_name)
     }
 
     cluster.create()
@@ -67,22 +67,22 @@ fn delete(name: String) -> Result<()> {
 
 fn config(name: String) -> Result<()> {
     let cluster = Kind::new(&name);
-    Ok(println!("{}", cluster.get_kube_config()))
+    println!("{}", cluster.get_kube_config());
+
+    Ok(())
 }
 
 fn all_clusters() -> Vec<String> {
     let mut clusters = Vec::new();
-    match Kind::get_config_dir() {
-        Ok(config) => {
-            let config = Path::new(&config);
-            for entry in fs::read_dir(config).expect("could not read dir") {
-                let entry = entry.unwrap();
-                let entry = entry.file_name().to_str().unwrap().to_string();
-                clusters.push(entry);
-            }
+
+    if let Ok(config) = Kind::get_config_dir() {
+        let config = Path::new(&config);
+        for entry in fs::read_dir(config).expect("could not read dir") {
+            let entry = entry.unwrap();
+            let entry = entry.file_name().to_str().unwrap().to_string();
+            clusters.push(entry);
         }
-        Err(_) => {}
-    };
+    }
 
     clusters
 }

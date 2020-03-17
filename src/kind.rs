@@ -110,7 +110,7 @@ impl Kind {
             None
         } else {
             let parts: Vec<&str> = container_name.split("-control-plane").collect();
-            let part = parts.get(0).unwrap().to_string();
+            let part = (*parts.get(0).unwrap()).to_string();
 
             if &part[0..1] == "/" {
                 Some(String::from(&part[1..]))
@@ -175,10 +175,7 @@ impl Kind {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .expect(&format!(
-                "Could not find docker credentials helper for {}",
-                registry
-            ));
+            .unwrap_or_else(|_| panic!("Could not find docker credentials helper for {}", registry));
 
         cmd.stdin.as_mut().unwrap().write_all(registry.as_bytes())?;
         cmd.wait()?;
@@ -230,19 +227,20 @@ impl Kind {
         self.ecr_repo = reg;
     }
 
-    fn start_local_registry() -> Option<String> {
+    fn find_local_registry(container_name: &str) -> Option<String> {
         // the following command returns a handle to the child, but it is spawned as a different process.
         // let _registry = Command::new("docker")
         //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
         //     .spawn()
         //     .expect("Could not start local Docker registry");
 
+
         let ip = Command::new("docker")
             .args(vec![
                 "inspect",
                 "-f",
                 "{{.NetworkSettings.IPAddress}}",
-                "local-registry",
+                container_name,
             ])
             .output()
             .expect("Could not get IP from local registry");
@@ -250,8 +248,8 @@ impl Kind {
         Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
     }
 
-    pub fn use_local_registry(&mut self) {
-        self.local_registry = Kind::start_local_registry();
+    pub fn use_local_registry(&mut self, container_name: &str) {
+        self.local_registry = Kind::find_local_registry(container_name);
     }
 
     pub fn create(self) -> Result<()> {
@@ -306,5 +304,31 @@ impl Kind {
             config_dir: format!("{}/{}", home, name),
             local_registry: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::kind::Kind;
+
+    #[test]
+    fn test_new() {
+        // TODO: test configuration on home directory.
+        let k = Kind::new("test");
+
+        let home = dirs::home_dir()
+            .unwrap();
+
+        assert_eq!(k.name, "test");
+        assert_eq!(k.ecr_repo, None);
+        assert_eq!(k.config_dir, format!("{}/.nomake/test", home.to_str().unwrap()));
+        assert_eq!(k.local_registry, None);
+    }
+
+    #[test]
+    fn test_get_cluster_name() {
+        assert_eq!(Kind::get_cluster_name("not-us"), None);
+        assert_eq!(Kind::get_cluster_name("this-is-us-control-plane"), Some(String::from("this-is-us")));
+        assert_eq!(Kind::get_cluster_name("/this-is-us-control-plane"), Some(String::from("this-is-us")));
     }
 }

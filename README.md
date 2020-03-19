@@ -13,16 +13,16 @@ The simplest way of using `nomake` is to create a simple cluster.
 
 ``` sh
 # creates a simple cluster
-$ nomake create --name test
+$ nomake create
 # and to configure kubectl
-$ eval $(nomake config --name test --env) # this exports KUBECONFIG
+$ eval $(nomake config --env) # this exports KUBECONFIG
 # checks that everything is working
 $ kubectl get namespaces
 NAME                 STATUS   AGE
 default              Active   66s
 ...
 # removes the cluster at the end
-$ nomake delete --name test
+$ nomake delete
 ```
 
 ## Configuring access to ECR
@@ -32,8 +32,8 @@ $ nomake delete --name test
 be in your PATH.
 
 ``` sh
-$ nomake create --name test --ecr xxx.ecr.region.amazonaws.com
-$ eval $(nomake config --name test --env)
+$ nomake create --ecr xxx.ecr.region.amazonaws.com
+$ eval $(nomake config --env)
 $ kubectl create deployment example --image xxx.ecr.region.amazonaws.com/xxx
 ```
 
@@ -44,7 +44,14 @@ local cluster follow the instructions
 [here](https://kind.sigs.k8s.io/docs/user/local-registry/) and then:
 
 ``` sh
-$ nomake create --name test --use-local-registry "kind-registry"
-$ eval $(nomake config --name test --env)
+$ nomake create --use-local-registry "kind-registry"
+$ eval $(nomake config --env)
 $ kubectl create deployment example --image localhost:5000/xxx
 ```
+
+## What else?
+
+This is an exercise to learn [Rust](https://www.rust-lang.org/) which is
+probably the most interesting programming language from the last couple of
+years. Also I wanted to try something different than shell-scripting for this
+kind of task.

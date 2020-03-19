@@ -228,13 +228,6 @@ impl Kind {
     }
 
     fn find_local_registry(container_name: &str) -> Option<String> {
-        // the following command returns a handle to the child, but it is spawned as a different process.
-        // let _registry = Command::new("docker")
-        //     .args(&["run", "--restart=always", "-p", "5000:5000", "--name", "local-registry", "registry:2"])
-        //     .spawn()
-        //     .expect("Could not start local Docker registry");
-
-
         let ip = Command::new("docker")
             .args(vec![
                 "inspect",

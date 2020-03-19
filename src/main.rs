@@ -37,6 +37,10 @@ enum Opt {
         /// name of the cluster
         #[structopt(long)]
         name: String,
+
+        /// Make the output "evalable"
+        #[structopt(long)]
+        env: bool,
     },
     /// Display list of known clusters
     List,
@@ -56,18 +60,25 @@ fn create(name: String, ecr: Option<String>, use_local_registry: Option<String>)
         cluster.use_local_registry(&container_name)
     }
 
+    println!("Creating cluster: {}", name);
     cluster.create()
 }
 
 fn delete(name: String) -> Result<()> {
     let cluster = Kind::new(&name);
-    println!("deleting cluster");
+
+    println!("Deleting cluster: {}", name);
     cluster.delete()
 }
 
-fn config(name: String) -> Result<()> {
+fn config(name: String, env: bool) -> Result<()> {
     let cluster = Kind::new(&name);
-    println!("{}", cluster.get_kube_config());
+
+    if env {
+        println!("export KUBECONFIG={}", cluster.get_kube_config());
+    } else {
+        println!("{}", cluster.get_kube_config());
+    }
 
     Ok(())
 }
@@ -122,7 +133,7 @@ fn main() -> Result<()> {
             use_local_registry,
         } => create(name, ecr, use_local_registry),
         Opt::Delete { name } => delete(name),
-        Opt::Config { name } => config(name),
+        Opt::Config { name, env } => config(name, env),
         Opt::List => Ok(list()),
         Opt::Clean { force } => clean(force),
     }

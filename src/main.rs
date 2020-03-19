@@ -8,6 +8,8 @@ use std::vec::Vec;
 use crate::kind::Kind;
 use structopt::StructOpt;
 
+const DEFAULT_NAME: &str = "nomake-default";
+
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Kind")]
 /// The kind bla
@@ -15,7 +17,7 @@ enum Opt {
     /// Creates a kind cluster
     Create {
         /// Name of the cluster
-        #[structopt(long)]
+        #[structopt(long, default_value = DEFAULT_NAME)]
         name: String,
 
         /// Configures access to an ECR private registry
@@ -29,13 +31,13 @@ enum Opt {
     /// Deletes a kind cluster
     Delete {
         /// Name of the cluster
-        #[structopt(long)]
+        #[structopt(long, default_value = DEFAULT_NAME)]
         name: String,
     },
     /// Get cluster configuration
     Config {
         /// name of the cluster
-        #[structopt(long)]
+        #[structopt(long, default_value = DEFAULT_NAME)]
         name: String,
 
         /// Make the output "evalable"

@@ -1,4 +1,5 @@
 use anyhow::Result;
+mod eks;
 mod kind;
 
 use std::fs;

@@ -1,6 +1,6 @@
 # hake
 
-![hake](meat.svg "Fish with no bone")
+![hake](meat.png "Fish with no bone")
 
 `hake` is a small CLI utility to start a Kubernetes cluster for testing
 purposes, with a few convenience features. It supports configuring access to ECR

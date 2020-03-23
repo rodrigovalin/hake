@@ -121,7 +121,7 @@ impl Kind {
         }
     }
 
-    // Removes every entry in ~/.nomake that does not have a corresponding kind docker container.
+    // Removes every entry in ~/.hake that does not have a corresponding kind docker container.
     async fn async_get_containers() -> Result<Vec<String>> {
         let docker = Docker::connect_with_local_defaults()?;
         let mut filter = HashMap::new();
@@ -217,7 +217,7 @@ impl Kind {
                 .unwrap(),
         );
 
-        Ok(format!("{}/.nomake", home))
+        Ok(format!("{}/.hake", home))
     }
 
     pub fn get_kube_config(self) -> String {
@@ -325,7 +325,7 @@ mod tests {
 
         assert_eq!(k.name, "test");
         assert_eq!(k.ecr_repo, None);
-        assert_eq!(k.config_dir, format!("{}/.nomake/test", home.to_str().unwrap()));
+        assert_eq!(k.config_dir, format!("{}/.hake/test", home.to_str().unwrap()));
         assert_eq!(k.local_registry, None);
     }
 

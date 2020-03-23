@@ -396,6 +396,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "hake"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "bollard",
+ "console",
+ "dirs",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serde_yaml",
+ "structopt",
+ "tokio",
+]
+
+[[package]]
 name = "heck"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -650,23 +667,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.8",
-]
-
-[[package]]
-name = "nomake"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64",
- "bollard",
- "console",
- "dirs",
- "serde",
- "serde_derive",
- "serde_json",
- "serde_yaml",
- "structopt",
- "tokio",
 ]
 
 [[package]]

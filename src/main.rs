@@ -10,7 +10,7 @@ use console::Style;
 use crate::kind::Kind;
 use structopt::StructOpt;
 
-const DEFAULT_NAME: &str = "nomake-default";
+const DEFAULT_NAME: &str = "hake-default";
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Kind")]

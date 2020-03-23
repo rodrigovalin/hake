@@ -1,51 +1,53 @@
-# nomake
+# hake
 
-`nomake` is a small CLI utility to start a Kubernetes cluster for testing
+![hake](meat.png "Fish with no bone")
+
+`hake` is a small CLI utility to start a Kubernetes cluster for testing
 purposes, with a few convenience features. It supports configuring access to ECR
-or to a local registry. `nomake` uses [Kind](https://kind.sigs.k8s.io/) to start
+or to a local registry. `hake` uses [Kind](https://kind.sigs.k8s.io/) to start
 the local cluster.
 
-The only requirement for `nomake` is the `kind` binary to be in your `$PATH`.
+The only requirement for `hake` is the `kind` binary to be in your `$PATH`.
 
 ## Usage
 
-The simplest way of using `nomake` is to create a simple cluster.
+The simplest way of using `hake` is to create a simple cluster.
 
 ``` sh
 # creates a simple cluster
-$ nomake create
+$ hake create
 # and to configure kubectl
-$ eval $(nomake config --env) # this exports KUBECONFIG
+$ eval $(hake config --env) # this exports KUBECONFIG
 # checks that everything is working
 $ kubectl get namespaces
 NAME                 STATUS   AGE
 default              Active   66s
 ...
 # removes the cluster at the end
-$ nomake delete
+$ hake delete
 ```
 
 ## Configuring access to ECR
 
-`nomake` can configure access to a private ECR repo. It requires the
+`hake` can configure access to a private ECR repo. It requires the
 [ecr-login-helper](https://github.com/awslabs/amazon-ecr-credential-helper) to
 be in your PATH.
 
 ``` sh
-$ nomake create --ecr xxx.ecr.region.amazonaws.com
-$ eval $(nomake config --env)
+$ hake create --ecr xxx.ecr.region.amazonaws.com
+$ eval $(hake config --env)
 $ kubectl create deployment example --image xxx.ecr.region.amazonaws.com/xxx
 ```
 
 ## Configuring access to a local registry
 
-`nomake` can use a local registry to speed up local development. To start the
+`hake` can use a local registry to speed up local development. To start the
 local cluster follow the instructions
 [here](https://kind.sigs.k8s.io/docs/user/local-registry/) and then:
 
 ``` sh
-$ nomake create --use-local-registry "kind-registry"
-$ eval $(nomake config --env)
+$ hake create --use-local-registry "kind-registry"
+$ eval $(hake config --env)
 $ kubectl create deployment example --image localhost:5000/xxx
 ```
 

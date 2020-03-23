@@ -1,5 +1,5 @@
 [package]
-name = "nomake"
+name = "hake"
 version = "0.1.0"
 authors = ["Rodrigo Valin <licorna@gmail.com>"]
 edition = "2018"

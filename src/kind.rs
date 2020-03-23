@@ -49,6 +49,7 @@ pub struct Kind {
     pub ecr_repo: Option<String>,
     config_dir: String,
     local_registry: Option<String>,
+    verbose: bool,
 }
 
 impl Kind {
@@ -227,6 +228,10 @@ impl Kind {
         self.ecr_repo = reg;
     }
 
+    pub fn set_verbose(&mut self, verbose: bool) {
+        self.verbose = verbose;
+    }
+
     fn find_local_registry(container_name: &str) -> Option<String> {
         let ip = Command::new("docker")
             .args(vec![
@@ -264,8 +269,14 @@ impl Kind {
             .expect("could not get kind configuration");
         args.push(&kind_config);
 
-        // println!("Running kind with: {:?}", args);
-        Command::new("kind").args(args).output()?;
+
+        let mut command = Command::new("kind");
+        command.args(args);
+        if self.verbose {
+            command.spawn()?.wait()?;
+        } else {
+            command.output()?;
+        }
 
         Ok(())
     }
@@ -277,8 +288,7 @@ impl Kind {
 
         let _cmd = Command::new("kind")
             .args(args)
-            .output()
-            .expect("could not find kind");
+            .output()?;
 
         remove_dir_all(&self.config_dir)?;
         Ok(())
@@ -296,6 +306,7 @@ impl Kind {
             ecr_repo: None,
             config_dir: format!("{}/{}", home, name),
             local_registry: None,
+            verbose: false,
         }
     }
 }

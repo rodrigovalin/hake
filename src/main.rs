@@ -5,6 +5,8 @@ use std::fs;
 use std::path::Path;
 use std::vec::Vec;
 
+use console::Style;
+
 use crate::kind::Kind;
 use structopt::StructOpt;
 
@@ -27,6 +29,10 @@ enum Opt {
         /// Configure access to local Docker registry
         #[structopt(long)]
         use_local_registry: Option<String>,
+
+        /// Verbose
+        #[structopt(short)]
+        verbose: bool,
     },
     /// Deletes a kind cluster
     Delete {
@@ -54,7 +60,12 @@ enum Opt {
     },
 }
 
-fn create(name: String, ecr: Option<String>, use_local_registry: Option<String>) -> Result<()> {
+fn create(
+    name: String,
+    ecr: Option<String>,
+    use_local_registry: Option<String>,
+    verbose: bool,
+) -> Result<()> {
     let mut cluster = Kind::new(&name);
     cluster.configure_private_registry(ecr);
 
@@ -62,14 +73,18 @@ fn create(name: String, ecr: Option<String>, use_local_registry: Option<String>)
         cluster.use_local_registry(&container_name)
     }
 
-    println!("Creating cluster: {}", name);
+    cluster.set_verbose(verbose);
+
+    let cyan = Style::new().cyan();
+    println!("Creating cluster: {}", cyan.apply_to(name));
     cluster.create()
 }
 
 fn delete(name: String) -> Result<()> {
     let cluster = Kind::new(&name);
 
-    println!("Deleting cluster: {}", name);
+    let cyan = Style::new().cyan();
+    println!("Deleting cluster: {}", cyan.apply_to(name));
     cluster.delete()
 }
 
@@ -133,7 +148,8 @@ fn main() -> Result<()> {
             name,
             ecr,
             use_local_registry,
-        } => create(name, ecr, use_local_registry),
+            verbose,
+        } => create(name, ecr, use_local_registry, verbose),
         Opt::Delete { name } => delete(name),
         Opt::Config { name, env } => config(name, env),
         Opt::List => Ok(list()),

@@ -34,6 +34,11 @@ enum Opt {
         #[structopt(short)]
         verbose: bool,
     },
+    /// Recreates a cluster by name
+    Recreate {
+        #[structopt(long, default_value = DEFAULT_NAME)]
+        name: String,
+    },
     /// Deletes a kind cluster
     Delete {
         /// Name of the cluster
@@ -78,6 +83,13 @@ fn create(
     let cyan = Style::new().cyan();
     println!("Creating cluster: {}", cyan.apply_to(name));
     cluster.create()
+}
+
+fn recreate(name: &str) -> Result<()> {
+    let cyan = Style::new().cyan();
+    println!("Recreating cluster: {}", cyan.apply_to(name));
+
+    Kind::recreate(name, false)
 }
 
 fn delete(name: String) -> Result<()> {
@@ -150,6 +162,7 @@ fn main() -> Result<()> {
             use_local_registry,
             verbose,
         } => create(name, ecr, use_local_registry, verbose),
+        Opt::Recreate { name } => recreate(&name),
         Opt::Delete { name } => delete(name),
         Opt::Config { name, env } => config(name, env),
         Opt::List => Ok(list()),

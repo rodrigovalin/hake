@@ -269,10 +269,20 @@ impl Kind {
             .expect("could not get kind configuration");
         args.push(&kind_config);
 
+        Kind::run(&args, self.verbose)?;
 
+        let config_dir = Kind::get_config_dir()?;
+        let config_dir = format!("{}/{}/kind_args", config_dir, &self.name);
+        let mut saved_args = File::create(config_dir)?;
+        saved_args.write_all(args.join(" ").as_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn run(args: &Vec<&str>, verbose: bool) -> Result<()> {
         let mut command = Command::new("kind");
         command.args(args);
-        if self.verbose {
+        if verbose {
             command.spawn()?.wait()?;
         } else {
             command.output()?;
@@ -281,16 +291,39 @@ impl Kind {
         Ok(())
     }
 
+    pub fn recreate(name: &str, verbose: bool) -> Result<()> {
+        let config_dir = format!("{}/{}", Kind::get_config_dir()?, name);
+        let args_file = format!("{}/kind_args", config_dir);
+
+        let mut contents = String::new();
+        let mut saved_args = File::open(args_file)?;
+        saved_args.read_to_string(&mut contents)?;
+
+        Kind::delete_cluster(name)?;
+
+        let args: Vec<&str> = contents.split_ascii_whitespace().collect();
+        Kind::run(&args, verbose)?;
+
+        Ok(())
+    }
+
     pub fn delete(&self) -> Result<()> {
+        Kind::delete_cluster(&self.name)?;
+
+        remove_dir_all(&self.config_dir)?;
+
+        Ok(())
+    }
+
+    fn delete_cluster(name: &str) -> Result<()> {
         let mut args = vec!["delete", "cluster"];
         args.push("--name");
-        args.push(&self.name);
+        args.push(name);
 
         let _cmd = Command::new("kind")
             .args(args)
             .output()?;
 
-        remove_dir_all(&self.config_dir)?;
         Ok(())
     }
 

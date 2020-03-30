@@ -14,7 +14,7 @@ const DEFAULT_NAME: &str = "hake-default";
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Kind")]
-/// The kind bla
+/// The kind starter with simpler advanced options.
 enum Opt {
     /// Creates a kind cluster
     Create {

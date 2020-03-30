@@ -110,14 +110,7 @@ impl Kind {
         if !container_name.ends_with("-control-plane") {
             None
         } else {
-            let parts: Vec<&str> = container_name.split("-control-plane").collect();
-            let part = (*parts.get(0).unwrap()).to_string();
-
-            if &part[0..1] == "/" {
-                Some(String::from(&part[1..]))
-            } else {
-                Some(part)
-            }
+            Some(container_name.replace("-control-plane", "").replace("/", ""))
         }
     }
 
@@ -234,14 +227,12 @@ impl Kind {
 
     fn find_local_registry(container_name: &str) -> Option<String> {
         let ip = Command::new("docker")
-            .args(vec![
-                "inspect",
-                "-f",
-                "{{.NetworkSettings.IPAddress}}",
-                container_name,
-            ])
+            .arg("inspect")
+            .arg("-f")
+            .arg("{{.NetworkSettings.IPAddress}}")
+            .arg(container_name)
             .output()
-            .expect("Could not get IP from local registry");
+            .expect(&format!("Could not get IP from {} container", container_name));
 
         Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
     }

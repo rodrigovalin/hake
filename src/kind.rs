@@ -18,6 +18,8 @@ use bollard::container::ListContainersOptions;
 use bollard::Docker;
 use tokio::runtime::Runtime;
 
+use regex::Regex;
+
 #[derive(Serialize, Deserialize, Debug)]
 struct ExtraMount {
     containerPath: String,
@@ -25,9 +27,18 @@ struct ExtraMount {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+struct PortMapping{
+    containerPort: u32,
+    hostPort: u32,
+    protocol: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Node {
     role: String,
     extraMounts: Vec<ExtraMount>,
+    extraPortMappings: Vec<PortMapping>,
+    kubeadmConfigPatches: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -49,21 +60,33 @@ pub struct Kind {
     pub ecr_repo: Option<String>,
     config_dir: String,
     local_registry: Option<String>,
+    extra_port_mapping: Option<String>,
     verbose: bool,
 }
 
 impl Kind {
-    fn kind_extra_mount(role: &str, container_path: &str, host_path: &str) -> Vec<Node> {
+    fn kind_node(role: &str, container_path: Option<&str>, host_path: Option<&str>) -> Vec<Node> {
+        let extraPortMappings: Vec<PortMapping> = Vec::new();
+        let kubeadmConfigPatches: Vec<String> = Vec::new();
         vec![Node {
             role: String::from(role),
             extraMounts: vec![ExtraMount {
-                containerPath: String::from(container_path),
-                hostPath: String::from(host_path),
+                containerPath: String::from(container_path.unwrap_or_default()),
+                hostPath: String::from(host_path.unwrap_or_default()),
             }],
+            extraPortMappings: extraPortMappings,
+            kubeadmConfigPatches: kubeadmConfigPatches,
         }]
     }
 
-    fn get_kind_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> Result<String> {
+    fn init_config_ingress_ready() -> String {
+        String::from(r#"kind: InitConfiguration
+nodeRegistration:
+  kubeletExtraArgs:
+    node-labels: "ingress-ready=true""#)
+    }
+
+    fn get_kind_cluster_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> ClusterConfig {
         let mut cc = ClusterConfig {
             kind: String::from("Cluster"),
             apiVersion: String::from("kind.x-k8s.io/v1alpha4"),
@@ -73,10 +96,10 @@ impl Kind {
 
         if let Some(ecr) = ecr {
             if let Ok(docker_path) = self.create_docker_ecr_config_file(ecr) {
-                cc.nodes = Kind::kind_extra_mount(
+                cc.nodes = Kind::kind_node(
                     "control-plane",
-                    "/var/lib/kubelet/config.json",
-                    &docker_path,
+                    Some("/var/lib/kubelet/config.json"),
+                    Some(&docker_path),
                 );
             }
         }
@@ -87,13 +110,7 @@ impl Kind {
             )];
         }
 
-        let kind_cluster_config = serde_yaml::to_string(&cc)?;
-
-        let kind_config_path = format!("{}/kind_config", self.config_dir);
-        let mut kind_config = File::create(&kind_config_path)?;
-        kind_config.write_all(&kind_cluster_config.into_bytes())?;
-
-        Ok(kind_config_path)
+        cc
     }
 
     fn get_containerd_config_patch_to_local_registry(ip: &str) -> String {
@@ -241,6 +258,32 @@ impl Kind {
         self.local_registry = Kind::find_local_registry(container_name);
     }
 
+    pub fn extra_port_mapping(&mut self, extra_port_mapping: &str) {
+        self.extra_port_mapping = Some(String::from(extra_port_mapping));
+    }
+
+    /// receives a string like: 80:80:TCP or 80:80 or 80
+    fn parse_extra_port_mappings(epm: &str) -> Option<PortMapping> {
+        let container_port = 80;
+        let host_port = 80;
+        let mut proto = "TCP";
+
+        let re0 = Regex::new(r"^(\d{2}):(\d{2}):(TCP|HTTP)$").unwrap();
+        let _re1 = Regex::new(r"^(\d{2}):(\d{2})$").unwrap();
+        let _re2 = Regex::new(r"^(\d{2})$").unwrap();
+
+        if re0.is_match(epm) {
+            let cap = re0.captures(epm).unwrap();
+            Some(PortMapping {
+                containerPort: cap[1].parse::<u32>().unwrap(),
+                hostPort: cap[2].parse::<u32>().unwrap(),
+                protocol: String::from(&cap[3]),
+            })
+        } else {
+            None
+        }
+    }
+
     pub fn create(self) -> Result<()> {
         Kind::create_dirs(&self.name)?;
 
@@ -255,10 +298,27 @@ impl Kind {
         args.push(&kubeconfig);
 
         args.push("--config");
-        let kind_config = self
-            .get_kind_config(&self.ecr_repo, &self.local_registry)
-            .expect("could not get kind configuration");
-        args.push(&kind_config);
+        let mut kind_config = self
+            .get_kind_cluster_config(&self.ecr_repo, &self.local_registry);
+        if let Some(extra_port_mapping) = self.extra_port_mapping {
+            let epm = Kind::parse_extra_port_mappings(&extra_port_mapping);
+            if let Some(epm) = epm {
+                if kind_config.nodes.len() == 0 {
+                    kind_config.nodes = Kind::kind_node("control-plane", None, None);
+                }
+                kind_config.nodes[0].extraPortMappings = vec![epm];
+            }
+        }
+
+
+        let kind_cluster_config = serde_yaml::to_string(&kind_config)?;
+
+        let kind_config_path = format!("{}/kind_config", self.config_dir);
+        let mut kind_config = File::create(&kind_config_path)?;
+        kind_config.write_all(&kind_cluster_config.into_bytes())?;
+
+        // point the config file to the one we just saved
+        args.push(&kind_config_path);
 
         Kind::run(&args, self.verbose)?;
 
@@ -330,6 +390,7 @@ impl Kind {
             ecr_repo: None,
             config_dir: format!("{}/{}", home, name),
             local_registry: None,
+            extra_port_mapping: None,
             verbose: false,
         }
     }

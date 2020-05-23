@@ -404,6 +404,7 @@ dependencies = [
  "bollard",
  "console",
  "dirs",
+ "regex",
  "serde",
  "serde_derive",
  "serde_json",

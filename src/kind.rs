@@ -33,12 +33,13 @@ struct PortMapping{
     protocol: String,
 }
 
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Node {
     role: String,
-    extraMounts: Vec<ExtraMount>,
-    extraPortMappings: Vec<PortMapping>,
-    kubeadmConfigPatches: Vec<String>,
+    extraMounts: Option<Vec<ExtraMount>>,
+    extraPortMappings: Option<Vec<PortMapping>>,
+    kubeadmConfigPatches: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -65,18 +66,26 @@ pub struct Kind {
 }
 
 impl Kind {
-    fn kind_node(role: &str, container_path: Option<&str>, host_path: Option<&str>) -> Vec<Node> {
-        let extraPortMappings: Vec<PortMapping> = Vec::new();
-        let kubeadmConfigPatches: Vec<String> = Vec::new();
-        vec![Node {
+    fn extra_mount(container_path: Option<&str>, host_path: Option<&str>) -> Option<Vec<ExtraMount>> {
+        if let Some(container_path) = container_path {
+            if let Some(host_path) = host_path {
+                return Some(vec![ExtraMount {
+                    containerPath: String::from(container_path),
+                    hostPath: String::from(host_path),
+                }])
+            }
+        }
+
+        None
+    }
+
+    fn kind_node(role: &str, container_path: Option<&str>, host_path: Option<&str>) -> Node {
+        Node {
             role: String::from(role),
-            extraMounts: vec![ExtraMount {
-                containerPath: String::from(container_path.unwrap_or_default()),
-                hostPath: String::from(host_path.unwrap_or_default()),
-            }],
-            extraPortMappings: extraPortMappings,
-            kubeadmConfigPatches: kubeadmConfigPatches,
-        }]
+            extraMounts: Kind::extra_mount(container_path, host_path),
+            extraPortMappings: None,
+            kubeadmConfigPatches: None,
+        }
     }
 
     fn init_config_ingress_ready() -> String {
@@ -96,11 +105,11 @@ nodeRegistration:
 
         if let Some(ecr) = ecr {
             if let Ok(docker_path) = self.create_docker_ecr_config_file(ecr) {
-                cc.nodes = Kind::kind_node(
+                cc.nodes = vec![Kind::kind_node(
                     "control-plane",
                     Some("/var/lib/kubelet/config.json"),
                     Some(&docker_path),
-                );
+                )];
             }
         }
 
@@ -264,20 +273,32 @@ nodeRegistration:
 
     /// receives a string like: 80:80:TCP or 80:80 or 80
     fn parse_extra_port_mappings(epm: &str) -> Option<PortMapping> {
-        let container_port = 80;
-        let host_port = 80;
-        let mut proto = "TCP";
+        let mut container_port = 0;
+        let mut host_port = 0;
+        let mut proto = String::from("TCP");
 
         let re0 = Regex::new(r"^(\d{2}):(\d{2}):(TCP|HTTP)$").unwrap();
-        let _re1 = Regex::new(r"^(\d{2}):(\d{2})$").unwrap();
-        let _re2 = Regex::new(r"^(\d{2})$").unwrap();
+        let re1 = Regex::new(r"^(\d{2}):(\d{2})$").unwrap();
+        let re2 = Regex::new(r"^(\d+)$").unwrap();
 
         if re0.is_match(epm) {
             let cap = re0.captures(epm).unwrap();
-            Some(PortMapping {
-                containerPort: cap[1].parse::<u32>().unwrap(),
-                hostPort: cap[2].parse::<u32>().unwrap(),
-                protocol: String::from(&cap[3]),
+            container_port = cap[1].parse::<u32>().unwrap();
+            host_port = cap[2].parse::<u32>().unwrap();
+            proto = String::from(&cap[3]);
+        } else if let Some(cap) = re1.captures(epm) {
+            container_port = cap[1].parse::<u32>().unwrap();
+            host_port = cap[2].parse::<u32>().unwrap();
+        } else if let Some(cap) = re2.captures(epm) {
+            container_port = cap[1].parse::<u32>().unwrap();
+            host_port = container_port;
+        }
+
+        if container_port != 0 {
+            Some(PortMapping{
+                containerPort: container_port,
+                hostPort: host_port,
+                protocol: proto,
             })
         } else {
             None
@@ -303,10 +324,14 @@ nodeRegistration:
         if let Some(extra_port_mapping) = self.extra_port_mapping {
             let epm = Kind::parse_extra_port_mappings(&extra_port_mapping);
             if let Some(epm) = epm {
-                if kind_config.nodes.len() == 0 {
-                    kind_config.nodes = Kind::kind_node("control-plane", None, None);
-                }
-                kind_config.nodes[0].extraPortMappings = vec![epm];
+                if let Some(mut node) = kind_config.nodes.get_mut(0) {
+                    node.extraPortMappings = Some(vec![epm]);
+                }  else {
+                    let mut nn = Kind::kind_node("control-plane", None, None);
+                    nn.extraPortMappings = Some(vec![epm]);
+                    kind_config.nodes = vec![nn];
+                };
+                kind_config.nodes[0].kubeadmConfigPatches = Some(vec![Kind::init_config_ingress_ready()]);
             }
         }
 

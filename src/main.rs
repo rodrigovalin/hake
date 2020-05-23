@@ -1,4 +1,5 @@
 use anyhow::Result;
+mod add;
 mod kind;
 
 use std::fs;
@@ -29,6 +30,10 @@ enum Opt {
         /// Configure access to local Docker registry
         #[structopt(long)]
         use_local_registry: Option<String>,
+
+        /// Pass extra port mappings
+        #[structopt(long)]
+        extra_port_mappings: Option<String>,
 
         /// Verbose
         #[structopt(short)]
@@ -63,12 +68,19 @@ enum Opt {
         #[structopt(long)]
         force: bool,
     },
+    /// Adds a capability
+    Add {
+        /// name of the capability
+        #[structopt(long)]
+        name: String,
+    },
 }
 
 fn create(
     name: String,
     ecr: Option<String>,
     use_local_registry: Option<String>,
+    extra_port_mapping: Option<String>,
     verbose: bool,
 ) -> Result<()> {
     let mut cluster = Kind::new(&name);
@@ -76,6 +88,10 @@ fn create(
 
     if let Some(container_name) = use_local_registry {
         cluster.use_local_registry(&container_name)
+    }
+
+    if let Some(extra_port_mapping) = extra_port_mapping {
+        cluster.extra_port_mapping(&extra_port_mapping);
     }
 
     cluster.set_verbose(verbose);
@@ -133,6 +149,14 @@ fn list() {
     }
 }
 
+fn add(cap: &str) -> Result<()> {
+    match cap {
+        "cert-manager" => add::cert_manager(),
+        "ingress-nginx" => add::ingress_nginx(),
+        _ => Ok(()),
+    }
+}
+
 fn clean(force: bool) -> Result<()> {
     let kc = Kind::get_kind_containers()?;
     let clusters = all_clusters();
@@ -160,12 +184,14 @@ fn main() -> Result<()> {
             name,
             ecr,
             use_local_registry,
+            extra_port_mappings,
             verbose,
-        } => create(name, ecr, use_local_registry, verbose),
+        } => create(name, ecr, use_local_registry, extra_port_mappings, verbose),
         Opt::Recreate { name } => recreate(&name),
         Opt::Delete { name } => delete(name),
         Opt::Config { name, env } => config(name, env),
         Opt::List => Ok(list()),
+        Opt::Add { name } => add(&name),
         Opt::Clean { force } => clean(force),
     }
 }

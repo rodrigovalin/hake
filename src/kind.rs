@@ -37,9 +37,9 @@ struct PortMapping{
 #[derive(Serialize, Deserialize, Debug)]
 struct Node {
     role: String,
-    extraMounts: Option<Vec<ExtraMount>>,
-    extraPortMappings: Option<Vec<PortMapping>>,
-    kubeadmConfigPatches: Option<Vec<String>>,
+    extraMounts: Vec<ExtraMount>,
+    extraPortMappings: Vec<PortMapping>,
+    kubeadmConfigPatches: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -66,25 +66,25 @@ pub struct Kind {
 }
 
 impl Kind {
-    fn extra_mount(container_path: Option<&str>, host_path: Option<&str>) -> Option<Vec<ExtraMount>> {
+    fn extra_mount(container_path: Option<&str>, host_path: Option<&str>) -> Vec<ExtraMount> {
         if let Some(container_path) = container_path {
             if let Some(host_path) = host_path {
-                return Some(vec![ExtraMount {
+                return vec![ExtraMount {
                     containerPath: String::from(container_path),
                     hostPath: String::from(host_path),
-                }])
+                }]
             }
         }
 
-        None
+        vec![]
     }
 
     fn kind_node(role: &str, container_path: Option<&str>, host_path: Option<&str>) -> Node {
         Node {
             role: String::from(role),
             extraMounts: Kind::extra_mount(container_path, host_path),
-            extraPortMappings: None,
-            kubeadmConfigPatches: None,
+            extraPortMappings: vec![],
+            kubeadmConfigPatches: vec![],
         }
     }
 
@@ -325,13 +325,13 @@ nodeRegistration:
             let epm = Kind::parse_extra_port_mappings(&extra_port_mapping);
             if let Some(epm) = epm {
                 if let Some(mut node) = kind_config.nodes.get_mut(0) {
-                    node.extraPortMappings = Some(vec![epm]);
+                    node.extraPortMappings = vec![epm];
                 }  else {
                     let mut nn = Kind::kind_node("control-plane", None, None);
-                    nn.extraPortMappings = Some(vec![epm]);
+                    nn.extraPortMappings = vec![epm];
                     kind_config.nodes = vec![nn];
                 };
-                kind_config.nodes[0].kubeadmConfigPatches = Some(vec![Kind::init_config_ingress_ready()]);
+                kind_config.nodes[0].kubeadmConfigPatches = vec![Kind::init_config_ingress_ready()];
             }
         }
 

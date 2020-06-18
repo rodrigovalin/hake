@@ -62,10 +62,6 @@ enum Opt {
         /// name of the cluster
         #[structopt(long, default_value = DEFAULT_NAME)]
         name: String,
-
-        /// Make the output "evalable"
-        #[structopt(long)]
-        env: bool,
     },
     /// Display list of known clusters
     List,
@@ -160,16 +156,8 @@ fn delete(name: String) -> Result<()> {
     }
 }
 
-fn config(name: String, env: bool) -> Result<()> {
-    let cluster = Kind::new(&name);
-
-    if env {
-        println!("export KUBECONFIG={}", cluster.get_kube_config());
-    } else {
-        println!("{}", cluster.get_kube_config());
-    }
-
-    Ok(())
+fn config(name: &str) {
+    println!("export KUBECONFIG={}/{}/kubeconfig", get_config_dir(), name);
 }
 
 fn all_clusters() -> Vec<String> {
@@ -241,7 +229,7 @@ fn main() -> Result<()> {
         ),
         Opt::Recreate { name } => recreate(&name),
         Opt::Delete { name } => delete(name),
-        Opt::Config { name, env } => config(name, env),
+        Opt::Config { name } => Ok(config(&name)),
         Opt::List => Ok(list()),
         Opt::Add { name } => add(&name),
         Opt::Clean { force } => clean(force),

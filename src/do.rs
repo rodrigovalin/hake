@@ -5,17 +5,15 @@
 use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
-use std::io;
-use std::vec::Vec;
 
 use anyhow::Result;
-
+use console::Style;
 use dirs;
-use std::env;
+
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::prelude::*;
-use std::path::Path;
-use std::{thread, time};
+use std::vec::Vec;
+use std::{env, io, thread, time};
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -47,19 +45,13 @@ struct Response {
 }
 
 pub fn create(name: &str) {
-    let cluster_dir = format!("{}/{}", get_config_dir(), name);
-
-    if Path::new(&cluster_dir).exists() {
-        println!("Cluster with name {} already exists", name);
-        return ();
-    }
-
+    // TODO: parameterize
     let new_cluster = Cluster {
         name: String::from(name),
         region: String::from("lon1"),
         version: String::from("1.17.5-do.0"),
         node_pools: vec![NodePool {
-            size: String::from("s-4vcpu-16gb"),
+            size: String::from("s-6vcpu-16gb"),
             count: 2,
             name: String::from("this-nodepool"),
         }],
@@ -77,14 +69,19 @@ pub fn create(name: &str) {
 
     if resp.status() != StatusCode::CREATED {
         println!("Could not create cluster, status is {}", resp.status());
-        println!("Text: {:?}", resp);
+        println!("Text: {:?}", resp.text());
 
         return;
     }
 
+    let cyan = Style::new().cyan();
     let json_response: Response = resp.json().unwrap();
-    println!("{:?}", json_response);
+    println!(
+        "Cluster created with id: {}",
+        cyan.apply_to(&json_response.kubernetes_cluster.id)
+    );
 
+    let cluster_dir = format!("{}/{}", get_config_dir(), name);
     create_dir(&cluster_dir).unwrap();
 
     let url = format!(

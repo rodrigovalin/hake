@@ -92,7 +92,16 @@ fn create(
     extra_port_mapping: Option<String>,
     verbose: bool,
 ) -> Result<()> {
-    if provider == "digitalocean" {
+    let cluster_dir = format!("{}/{}", get_config_dir(), name);
+    if Path::new(&cluster_dir).exists() {
+        println!("Cluster with name {} already exists", name);
+        return Ok(());
+    }
+
+    let cyan = Style::new().cyan();
+    println!("Creating cluster: {}", cyan.apply_to(&name));
+
+    if provider == "digitalocean" || provider == "do" {
         r#do::create(&name);
 
         return Ok(());
@@ -110,8 +119,6 @@ fn create(
 
     cluster.set_verbose(verbose);
 
-    let cyan = Style::new().cyan();
-    println!("Creating cluster: {}", cyan.apply_to(name));
     cluster.create()
 }
 

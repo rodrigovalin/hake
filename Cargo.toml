@@ -19,3 +19,4 @@ bollard = "0.5.0"
 tokio = "0.2.13"
 console = "0.10.0"
 regex = "1"
+reqwest = { version = "0.10", features = ["blocking", "json"] }

@@ -1,5 +1,7 @@
 use anyhow::Result;
+
 mod add;
+mod r#do;
 mod kind;
 
 use std::fs;
@@ -12,6 +14,7 @@ use crate::kind::Kind;
 use structopt::StructOpt;
 
 const DEFAULT_NAME: &str = "hake-default";
+const DEFAULT_PROVIDER: &str = "kind";
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "Kind")]
@@ -38,6 +41,10 @@ enum Opt {
         /// Verbose
         #[structopt(short)]
         verbose: bool,
+
+        /// Provider
+        #[structopt(long, default_value = DEFAULT_PROVIDER)]
+        provider: String,
     },
     /// Recreates a cluster by name
     Recreate {
@@ -55,10 +62,6 @@ enum Opt {
         /// name of the cluster
         #[structopt(long, default_value = DEFAULT_NAME)]
         name: String,
-
-        /// Make the output "evalable"
-        #[structopt(long)]
-        env: bool,
     },
     /// Display list of known clusters
     List,
@@ -76,29 +79,46 @@ enum Opt {
     },
 }
 
+enum ClusterType {
+    Kind,
+    DigitalOcean,
+}
+
 fn create(
     name: String,
+    provider: String,
     ecr: Option<String>,
     use_local_registry: Option<String>,
     extra_port_mapping: Option<String>,
     verbose: bool,
 ) -> Result<()> {
-    let mut cluster = Kind::new(&name);
-    cluster.configure_private_registry(ecr);
-
-    if let Some(container_name) = use_local_registry {
-        cluster.use_local_registry(&container_name)
+    let cluster_dir = format!("{}/{}", get_config_dir(), name);
+    if Path::new(&cluster_dir).exists() {
+        println!("Cluster with name {} already exists", name);
+        return Ok(());
     }
-
-    if let Some(extra_port_mapping) = extra_port_mapping {
-        cluster.extra_port_mapping(&extra_port_mapping);
-    }
-
-    cluster.set_verbose(verbose);
 
     let cyan = Style::new().cyan();
-    println!("Creating cluster: {}", cyan.apply_to(name));
-    cluster.create()
+    println!("Creating cluster: {}", cyan.apply_to(&name));
+
+    match &provider[..] {
+        "digitalocean" | "do" => r#do::create(&name),
+        "kind" => {
+            let mut cluster = Kind::new(&name);
+            cluster.configure_private_registry(ecr);
+
+            if let Some(container_name) = use_local_registry {
+                cluster.use_local_registry(&container_name)
+            }
+            if let Some(extra_port_mapping) = extra_port_mapping {
+                cluster.extra_port_mapping(&extra_port_mapping);
+            }
+            cluster.set_verbose(verbose);
+
+            cluster.create()
+        }
+        _ => Ok(()),
+    }
 }
 
 fn recreate(name: &str) -> Result<()> {
@@ -108,24 +128,42 @@ fn recreate(name: &str) -> Result<()> {
     Kind::recreate(name, false)
 }
 
-fn delete(name: String) -> Result<()> {
-    let cluster = Kind::new(&name);
+fn get_config_dir() -> String {
+    let home = String::from(
+        dirs::home_dir()
+            .expect("User does not have a home")
+            .to_str()
+            .expect("User does not have a home"),
+    );
 
-    let cyan = Style::new().cyan();
-    println!("Deleting cluster: {}", cyan.apply_to(name));
-    cluster.delete()
+    format!("{}/.hake", home)
 }
 
-fn config(name: String, env: bool) -> Result<()> {
-    let cluster = Kind::new(&name);
+fn cluster_type(name: &str) -> ClusterType {
+    let config_dir = get_config_dir();
+    let cluster_dir = format!("{}/{}", config_dir, name);
 
-    if env {
-        println!("export KUBECONFIG={}", cluster.get_kube_config());
+    if Path::new(&format!("{}/cluster_uuid", cluster_dir)).exists() {
+        ClusterType::DigitalOcean
     } else {
-        println!("{}", cluster.get_kube_config());
+        ClusterType::Kind
     }
+}
 
-    Ok(())
+fn delete(name: String) -> Result<()> {
+    let cyan = Style::new().cyan();
+    println!("Deleting cluster: {}", cyan.apply_to(&name));
+    match cluster_type(&name) {
+        ClusterType::Kind => {
+            let cluster = Kind::new(&name);
+            cluster.delete()
+        }
+        ClusterType::DigitalOcean => r#do::delete(&name),
+    }
+}
+
+fn config(name: &str) {
+    println!("export KUBECONFIG={}/{}/kubeconfig", get_config_dir(), name);
 }
 
 fn all_clusters() -> Vec<String> {
@@ -182,14 +220,22 @@ fn main() -> Result<()> {
     match matches {
         Opt::Create {
             name,
+            provider,
             ecr,
             use_local_registry,
             extra_port_mappings,
             verbose,
-        } => create(name, ecr, use_local_registry, extra_port_mappings, verbose),
+        } => create(
+            name,
+            provider,
+            ecr,
+            use_local_registry,
+            extra_port_mappings,
+            verbose,
+        ),
         Opt::Recreate { name } => recreate(&name),
         Opt::Delete { name } => delete(name),
-        Opt::Config { name, env } => config(name, env),
+        Opt::Config { name } => Ok(config(&name)),
         Opt::List => Ok(list()),
         Opt::Add { name } => add(&name),
         Opt::Clean { force } => clean(force),

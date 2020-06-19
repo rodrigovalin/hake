@@ -6,9 +6,8 @@ use reqwest;
 use reqwest::header::CONTENT_TYPE;
 use reqwest::StatusCode;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use console::Style;
-use dirs;
 
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::prelude::*;
@@ -44,7 +43,7 @@ struct Response {
     kubernetes_cluster: KubernetesCluster,
 }
 
-pub fn create(name: &str) {
+pub fn create(name: &str) -> Result<()> {
     // TODO: parameterize
     let new_cluster = Cluster {
         name: String::from(name),
@@ -53,36 +52,32 @@ pub fn create(name: &str) {
         node_pools: vec![NodePool {
             size: String::from("s-6vcpu-16gb"),
             count: 2,
-            name: String::from("this-nodepool"),
+            name: String::from(format!("nodepool-{}", &name)),
         }],
     };
 
-    let api_key = env::var(ENV_DO_PROVIDER).unwrap();
+    let api_key = env::var(ENV_DO_PROVIDER)?;
     let client = reqwest::blocking::Client::new();
     let resp = client
         .post("https://api.digitalocean.com/v2/kubernetes/clusters")
         .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
         .json(&new_cluster)
-        .send()
-        .unwrap();
+        .send()?;
 
     if resp.status() != StatusCode::CREATED {
-        println!("Could not create cluster, status is {}", resp.status());
-        println!("Text: {:?}", resp.text());
-
-        return;
-    }
+        return Err(anyhow!("Could not create cluster: {}", resp.status()));
+    };
 
     let cyan = Style::new().cyan();
-    let json_response: Response = resp.json().unwrap();
+    let json_response: Response = resp.json()?;
     println!(
         "Cluster created with id: {}",
         cyan.apply_to(&json_response.kubernetes_cluster.id)
     );
 
-    let cluster_dir = format!("{}/{}", get_config_dir(), name);
-    create_dir(&cluster_dir).unwrap();
+    let cluster_dir = format!("{}/{}", crate::get_config_dir(), name);
+    create_dir(&cluster_dir)?;
 
     let url = format!(
         "https://api.digitalocean.com/v2/kubernetes/clusters/{}/kubeconfig",
@@ -97,35 +92,24 @@ pub fn create(name: &str) {
         .get(&url)
         .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
-        .send()
-        .unwrap();
+        .send()?;
 
     let mut out =
         File::create(format!("{}/kubeconfig", &cluster_dir)).expect("failed to create file");
     io::copy(&mut resp, &mut out).expect("failed to copy content");
 
-    let mut cluster_uuid = File::create(format!("{}/cluster_uuid", &cluster_dir)).unwrap();
+    let mut cluster_uuid = File::create(format!("{}/cluster_uuid", &cluster_dir))?;
 
-    cluster_uuid
-        .write_all(&json_response.kubernetes_cluster.id.as_bytes())
-        .unwrap();
-}
+    cluster_uuid.write_all(&json_response.kubernetes_cluster.id.as_bytes())?;
 
-fn get_config_dir() -> String {
-    let home = String::from(
-        dirs::home_dir()
-            .expect("User does not have a home")
-            .to_str()
-            .unwrap(),
-    );
-
-    format!("{}/.hake", home)
+    Ok(())
 }
 
 pub fn delete(name: &str) -> Result<()> {
-    let api_key = env::var(ENV_DO_PROVIDER).unwrap();
+    let api_key = env::var(ENV_DO_PROVIDER)?;
+    let config_dir = crate::get_config_dir();
 
-    let doid = format!("{}/{}/cluster_uuid", get_config_dir(), name);
+    let doid = format!("{}/{}/cluster_uuid", config_dir, name);
     let mut file = File::open(doid)?;
     let mut cluster_id = String::new();
     file.read_to_string(&mut cluster_id)?;
@@ -139,7 +123,7 @@ pub fn delete(name: &str) -> Result<()> {
         .bearer_auth(&api_key)
         .send()?;
 
-    remove_dir_all(format!("{}/{}", get_config_dir(), name))?;
+    remove_dir_all(format!("{}/{}", config_dir, name))?;
 
     Ok(())
 }

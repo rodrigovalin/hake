@@ -101,25 +101,24 @@ fn create(
     let cyan = Style::new().cyan();
     println!("Creating cluster: {}", cyan.apply_to(&name));
 
-    if provider == "digitalocean" || provider == "do" {
-        r#do::create(&name);
+    match &provider[..] {
+        "digitalocean" | "do" => r#do::create(&name),
+        "kind" => {
+            let mut cluster = Kind::new(&name);
+            cluster.configure_private_registry(ecr);
 
-        return Ok(());
+            if let Some(container_name) = use_local_registry {
+                cluster.use_local_registry(&container_name)
+            }
+            if let Some(extra_port_mapping) = extra_port_mapping {
+                cluster.extra_port_mapping(&extra_port_mapping);
+            }
+            cluster.set_verbose(verbose);
+
+            cluster.create()
+        }
+        _ => Ok(()),
     }
-    let mut cluster = Kind::new(&name);
-    cluster.configure_private_registry(ecr);
-
-    if let Some(container_name) = use_local_registry {
-        cluster.use_local_registry(&container_name)
-    }
-
-    if let Some(extra_port_mapping) = extra_port_mapping {
-        cluster.extra_port_mapping(&extra_port_mapping);
-    }
-
-    cluster.set_verbose(verbose);
-
-    cluster.create()
 }
 
 fn recreate(name: &str) -> Result<()> {
@@ -134,7 +133,7 @@ fn get_config_dir() -> String {
         dirs::home_dir()
             .expect("User does not have a home")
             .to_str()
-            .unwrap(),
+            .expect("User does not have a home"),
     );
 
     format!("{}/.hake", home)

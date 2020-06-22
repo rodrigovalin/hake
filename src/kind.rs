@@ -27,12 +27,11 @@ struct ExtraMount {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct PortMapping{
+struct PortMapping {
     containerPort: u32,
     hostPort: u32,
     protocol: String,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Node {
@@ -72,7 +71,7 @@ impl Kind {
                 return vec![ExtraMount {
                     containerPath: String::from(container_path),
                     hostPath: String::from(host_path),
-                }]
+                }];
             }
         }
 
@@ -89,13 +88,19 @@ impl Kind {
     }
 
     fn init_config_ingress_ready() -> String {
-        String::from(r#"kind: InitConfiguration
+        String::from(
+            r#"kind: InitConfiguration
 nodeRegistration:
   kubeletExtraArgs:
-    node-labels: "ingress-ready=true""#)
+    node-labels: "ingress-ready=true""#,
+        )
     }
 
-    fn get_kind_cluster_config(&self, ecr: &Option<String>, local_reg: &Option<String>) -> ClusterConfig {
+    fn get_kind_cluster_config(
+        &self,
+        ecr: &Option<String>,
+        local_reg: &Option<String>,
+    ) -> ClusterConfig {
         let mut cc = ClusterConfig {
             kind: String::from("Cluster"),
             apiVersion: String::from("kind.x-k8s.io/v1alpha4"),
@@ -136,7 +141,11 @@ nodeRegistration:
         if !container_name.ends_with("-control-plane") {
             None
         } else {
-            Some(container_name.replace("-control-plane", "").replace("/", ""))
+            Some(
+                container_name
+                    .replace("-control-plane", "")
+                    .replace("/", ""),
+            )
         }
     }
 
@@ -195,7 +204,9 @@ nodeRegistration:
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap_or_else(|_| panic!("Could not find docker credentials helper for {}", registry));
+            .unwrap_or_else(|_| {
+                panic!("Could not find docker credentials helper for {}", registry)
+            });
 
         cmd.stdin.as_mut().unwrap().write_all(registry.as_bytes())?;
         cmd.wait()?;
@@ -254,7 +265,10 @@ nodeRegistration:
             .arg("{{.NetworkSettings.IPAddress}}")
             .arg(container_name)
             .output()
-            .expect(&format!("Could not get IP from {} container", container_name));
+            .expect(&format!(
+                "Could not get IP from {} container",
+                container_name
+            ));
 
         Some(String::from_utf8(ip.stdout).unwrap().trim().to_string())
     }
@@ -291,7 +305,7 @@ nodeRegistration:
         }
 
         if container_port != 0 {
-            Some(PortMapping{
+            Some(PortMapping {
                 containerPort: container_port,
                 hostPort: host_port,
                 protocol: proto,
@@ -315,14 +329,13 @@ nodeRegistration:
         args.push(&kubeconfig);
 
         args.push("--config");
-        let mut kind_config = self
-            .get_kind_cluster_config(&self.ecr_repo, &self.local_registry);
+        let mut kind_config = self.get_kind_cluster_config(&self.ecr_repo, &self.local_registry);
         if let Some(extra_port_mapping) = self.extra_port_mapping {
             let epm = Kind::parse_extra_port_mappings(&extra_port_mapping);
             if let Some(epm) = epm {
                 if let Some(mut node) = kind_config.nodes.get_mut(0) {
                     node.extraPortMappings = vec![epm];
-                }  else {
+                } else {
                     let mut nn = Kind::kind_node("control-plane", None, None);
                     nn.extraPortMappings = vec![epm];
                     kind_config.nodes = vec![nn];
@@ -330,7 +343,6 @@ nodeRegistration:
                 kind_config.nodes[0].kubeadmConfigPatches = vec![Kind::init_config_ingress_ready()];
             }
         }
-
 
         let kind_cluster_config = serde_yaml::to_string(&kind_config)?;
 
@@ -392,9 +404,7 @@ nodeRegistration:
         args.push("--name");
         args.push(name);
 
-        let _cmd = Command::new("kind")
-            .args(args)
-            .output()?;
+        let _cmd = Command::new("kind").args(args).output()?;
 
         Ok(())
     }
@@ -426,19 +436,27 @@ mod tests {
         // TODO: test configuration on home directory.
         let k = Kind::new("test");
 
-        let home = dirs::home_dir()
-            .unwrap();
+        let home = dirs::home_dir().unwrap();
 
         assert_eq!(k.name, "test");
         assert_eq!(k.ecr_repo, None);
-        assert_eq!(k.config_dir, format!("{}/.hake/test", home.to_str().unwrap()));
+        assert_eq!(
+            k.config_dir,
+            format!("{}/.hake/test", home.to_str().unwrap())
+        );
         assert_eq!(k.local_registry, None);
     }
 
     #[test]
     fn test_get_cluster_name() {
         assert_eq!(Kind::get_cluster_name("not-us"), None);
-        assert_eq!(Kind::get_cluster_name("this-is-us-control-plane"), Some(String::from("this-is-us")));
-        assert_eq!(Kind::get_cluster_name("/this-is-us-control-plane"), Some(String::from("this-is-us")));
+        assert_eq!(
+            Kind::get_cluster_name("this-is-us-control-plane"),
+            Some(String::from("this-is-us"))
+        );
+        assert_eq!(
+            Kind::get_cluster_name("/this-is-us-control-plane"),
+            Some(String::from("this-is-us"))
+        );
     }
 }

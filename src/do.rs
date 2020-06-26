@@ -10,7 +10,7 @@ use reqwest::StatusCode;
 use anyhow::{anyhow, Result};
 use console::Style;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -104,18 +104,10 @@ impl Default for Metadata {
 impl Metadata {
     pub fn from_string(data: &str) -> Metadata {
         let mut metadata = Metadata::default();
-        let fields: Vec<&str> = data.split("&").collect();
+        let map = parse_metadata(data);
 
-        // there should be a more idiomatic way of doing this!
-        for field in fields {
-            let split_field = field.split("=").collect::<Vec<&str>>();
-
-            if split_field.len() != 2 {
-                continue;
-            }
-
-            let value = String::from(split_field[1]);
-            match split_field[0] {
+        for (key, value) in map {
+            match &key[..] {
                 "region" => metadata.region = value,
                 "version" => metadata.version = value,
                 "nodepool.size" => metadata.nodepool_size = value,
@@ -330,4 +322,57 @@ pub fn delete(name: &str) -> Result<()> {
     remove_dir_all(format!("{}/{}", config_dir, name))?;
 
     Ok(())
+}
+
+fn parse_metadata(metadata: &str) -> HashMap<String, String> {
+    let fields: Vec<&str> = metadata.split("&").collect();
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    // there should be a more idiomatic way of doing this!
+    for field in fields {
+        let split_field: Vec<&str> = field.split("=").into_iter().collect();
+        if split_field.len() != 2 {
+            continue;
+        }
+
+        map.insert(split_field[0].to_string(), split_field[1].to_string());
+    }
+
+    map
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::r#do;
+    use std::collections::HashMap;
+
+    // Taken from https://stackoverflow.com/a/27582993/75928
+    macro_rules! map(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key, $value);
+            )+
+            m
+        }
+    };
+    );
+
+    #[test]
+    fn test_parse_metadata() {
+        assert_eq!(
+            r#do::parse_metadata("region=lon1"),
+            map! { "region".to_string() => "lon1".to_string() }
+        );
+
+        assert_eq!(
+            r#do::parse_metadata("region=lon1&attr1=value1"),
+            map! { "region".to_string() => "lon1".to_string(), "attr1".to_string() => "value1".to_string() }
+        );
+
+        assert_eq!(r#do::parse_metadata("region"), HashMap::new());
+        assert_eq!(r#do::parse_metadata("&"), HashMap::new());
+        assert_eq!(r#do::parse_metadata(""), HashMap::new());
+    }
 }

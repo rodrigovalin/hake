@@ -45,6 +45,10 @@ enum Opt {
         /// Provider
         #[structopt(long, default_value = DEFAULT_PROVIDER)]
         provider: String,
+
+        /// Metadata
+        #[structopt(long)]
+        metadata: Option<String>,
     },
     /// Recreates a cluster by name
     Recreate {
@@ -90,6 +94,7 @@ fn create(
     ecr: Option<String>,
     use_local_registry: Option<String>,
     extra_port_mapping: Option<String>,
+    metadata: Option<String>,
     verbose: bool,
 ) -> Result<()> {
     let cluster_dir = format!("{}/{}", get_config_dir(), name);
@@ -102,7 +107,7 @@ fn create(
     println!("Creating cluster: {}", cyan.apply_to(&name));
 
     match &provider[..] {
-        "digitalocean" | "do" => r#do::create(&name),
+        "digitalocean" | "do" => r#do::create(&name, metadata),
         "kind" => {
             let mut cluster = Kind::new(&name);
             cluster.configure_private_registry(ecr);
@@ -225,12 +230,14 @@ fn main() -> Result<()> {
             use_local_registry,
             extra_port_mappings,
             verbose,
+            metadata,
         } => create(
             name,
             provider,
             ecr,
             use_local_registry,
             extra_port_mappings,
+            metadata,
             verbose,
         ),
         Opt::Recreate { name } => recreate(&name),

@@ -3,6 +3,7 @@
 /// Digital Ocean Kubernetes
 ///
 use reqwest;
+use reqwest::header;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::StatusCode;
 
@@ -145,11 +146,9 @@ pub fn create(name: &str, metadata: Option<String>) -> Result<()> {
         ..Default::default()
     };
 
-    let api_key = env::var(ENV_DO_PROVIDER)?;
-    let client = reqwest::blocking::Client::new();
+    let client = get_do_api_client()?;
     let resp = client
         .post("https://api.digitalocean.com/v2/kubernetes/clusters")
-        .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
         .json(&new_cluster)
         .send()?;
@@ -178,7 +177,6 @@ pub fn create(name: &str, metadata: Option<String>) -> Result<()> {
 
     let mut resp = client
         .get(&url)
-        .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
         .send()?;
 
@@ -195,43 +193,58 @@ pub fn create(name: &str, metadata: Option<String>) -> Result<()> {
 
 // Return a list of droplets for a given cluster
 fn get_droplets_ids_for_cluster(cluster_id: &str) -> Result<Vec<u32>> {
-    let api_key = env::var(ENV_DO_PROVIDER)?;
-
-    let client = reqwest::blocking::Client::new();
+    let client = get_do_api_client()?;
     let resp = client
         .get(&format!(
             "https://api.digitalocean.com/v2/kubernetes/clusters/{}",
             cluster_id
         ))
-        .bearer_auth(&api_key)
         .header(ACCEPT, "application/json")
         .send()?;
 
     let json_response: KubernetesClusterResponse = resp.json()?;
 
-    let mut droplet_ids: Vec<String> = vec![];
+    let mut droplet_ids: Vec<u32> = vec![];
     for node_pool in json_response.kubernetes_cluster.node_pools.iter() {
         for node in node_pool.nodes.iter() {
             if let Some(id) = &node.droplet_id {
-                droplet_ids.push(id.clone())
+                droplet_ids.push(id.parse::<u32>()?)
             }
         }
     }
 
-    Ok(droplet_ids
-        .into_iter()
-        .map(|id| id.parse::<u32>().unwrap())
-        .collect())
+    Ok(droplet_ids)
+}
+
+fn get_api_token() -> Result<String> {
+    Ok(env::var(ENV_DO_PROVIDER)?)
+}
+
+fn auth_headers() -> Result<reqwest::header::HeaderMap> {
+    let api_key = get_api_token()?;
+    let bearer_auth = format!("Bearer {}", &api_key);
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_str(&bearer_auth)?,
+    );
+
+    Ok(headers)
+}
+
+fn get_do_api_client() -> Result<reqwest::blocking::Client> {
+    Ok(reqwest::blocking::Client::builder()
+        .default_headers(auth_headers()?)
+        .build()?)
 }
 
 fn get_load_balancer_pointing_at_droplet_id(
     droplet_ids: HashSet<u32>,
 ) -> Result<Vec<LoadBalancer>> {
-    let api_key = env::var(ENV_DO_PROVIDER)?;
-    let client = reqwest::blocking::Client::new();
+    let client = get_do_api_client()?;
     let resp = client
         .get("https://api.digitalocean.com/v2/load_balancers")
-        .bearer_auth(&api_key)
         .header(ACCEPT, "application/json")
         .send()?;
 
@@ -245,18 +258,16 @@ fn get_load_balancer_pointing_at_droplet_id(
 }
 
 fn delete_load_balancer(lb: LoadBalancer) -> Result<()> {
-    let api_key = env::var(ENV_DO_PROVIDER)?;
-
     let lb_id = lb.id.expect("Got an empty id for load_balancer");
     let cyan = Style::new().cyan();
     println!("Removing Load Balancer: {}", cyan.apply_to(&lb_id));
-    let client = reqwest::blocking::Client::new();
+
+    let client = get_do_api_client()?;
     let resp = client
         .delete(&format!(
             "https://api.digitalocean.com/v2/load_balancers/{}",
             lb_id
         ))
-        .bearer_auth(&api_key)
         .send()?;
 
     if resp.status() == StatusCode::NO_CONTENT {
@@ -289,7 +300,6 @@ fn delete_residuals(cluster_id: &str) -> Result<()> {
 }
 
 pub fn delete(name: &str) -> Result<()> {
-    let api_key = env::var(ENV_DO_PROVIDER)?;
     let config_dir = crate::get_config_dir();
 
     let doid = format!("{}/{}/cluster_uuid", config_dir, name);
@@ -301,13 +311,12 @@ pub fn delete(name: &str) -> Result<()> {
 
     let cyan = Style::new().cyan();
     println!("Removing Cluster: {}", cyan.apply_to(&cluster_id));
-    let client = reqwest::blocking::Client::new();
+    let client = get_do_api_client()?;
     let resp = client
         .delete(&format!(
             "https://api.digitalocean.com/v2/kubernetes/clusters/{}",
             cluster_id
         ))
-        .bearer_auth(&api_key)
         .send()?;
 
     if resp.status() != StatusCode::NO_CONTENT {

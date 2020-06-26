@@ -3,12 +3,14 @@
 /// Digital Ocean Kubernetes
 ///
 use reqwest;
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header;
+use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use reqwest::StatusCode;
 
 use anyhow::{anyhow, Result};
 use console::Style;
 
+use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir, remove_dir_all, File};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -18,79 +20,155 @@ use serde_derive::{Deserialize, Serialize};
 
 const ENV_DO_PROVIDER: &str = "HAKE_PROVIDER_DIGITALOCEAN_API_KEY";
 
-#[derive(Serialize)]
-struct NodePool {
-    size: String,
-    count: u16,
-    name: String,
+#[derive(Serialize, Deserialize, Debug)]
+struct NodeStatus {
+    state: String,
 }
 
-#[derive(Serialize)]
-struct Cluster {
+#[derive(Serialize, Deserialize, Debug)]
+struct Node {
+    id: String,
+    name: String,
+    status: NodeStatus,
+    droplet_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct NodePool {
+    id: Option<String>,
+    name: String,
+    size: String,
+    count: u16,
+    tags: Option<Vec<String>>,
+    nodes: Vec<Node>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+struct KubernetesCluster {
+    id: Option<String>,
     name: String,
     region: String,
     version: String,
+    cluster_subnet: Option<String>,
+    service_subnet: Option<String>,
+    vpc_uuid: Option<String>,
+    ipv4: Option<String>,
+    endpoint: Option<String>,
+    tags: Option<Vec<String>>,
     node_pools: Vec<NodePool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct KubernetesCluster {
-    id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Response {
+struct KubernetesClusterResponse {
     kubernetes_cluster: KubernetesCluster,
 }
 
-pub fn create(name: &str) -> Result<()> {
-    // TODO: parameterize
-    let new_cluster = Cluster {
+#[derive(Serialize, Deserialize, Debug)]
+struct LoadBalancer {
+    // This is Option because it is not mandatory when creating the cluster
+    id: Option<String>,
+    name: String,
+    ip: Option<String>,
+    algorithm: String,
+    status: Option<String>,
+    tag: Option<String>,
+    droplet_ids: Vec<u32>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct LoadBalancerListResponse {
+    load_balancers: Vec<LoadBalancer>,
+}
+
+#[derive(Debug)]
+struct Metadata {
+    region: String,
+    version: String,
+    nodepool_size: String,
+    nodepool_count: u16,
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Metadata {
+            region: "lon1".to_string(),
+            version: "1.17.6-do.0".to_string(),
+            nodepool_size: "s-6vcpu-16gb".to_string(),
+            nodepool_count: 2,
+        }
+    }
+}
+
+impl Metadata {
+    pub fn from_string(data: &str) -> Metadata {
+        let mut metadata = Metadata::default();
+        let map = parse_metadata(data);
+
+        for (key, value) in map {
+            match &key[..] {
+                "region" => metadata.region = value,
+                "version" => metadata.version = value,
+                "nodepool.size" => metadata.nodepool_size = value,
+                "nodepool.count" => metadata.nodepool_count = value.parse::<u16>().unwrap(),
+                _ => {}
+            }
+        }
+
+        metadata
+    }
+}
+
+pub fn create(name: &str, metadata: Option<String>) -> Result<()> {
+    let provider_metadata = metadata.unwrap_or("".to_string());
+    let cluster_spec = Metadata::from_string(&provider_metadata);
+
+    let new_cluster = KubernetesCluster {
+        id: None,
         name: String::from(name),
-        region: String::from("lon1"),
-        version: String::from("1.17.5-do.0"),
+        region: cluster_spec.region,
+        version: cluster_spec.version,
         node_pools: vec![NodePool {
-            size: String::from("s-6vcpu-16gb"),
-            count: 2,
-            name: String::from(format!("nodepool-{}", &name)),
+            size: cluster_spec.nodepool_size,
+            count: cluster_spec.nodepool_count,
+            name: format!("nodepool-{}", &name),
+            ..Default::default()
         }],
+        ..Default::default()
     };
 
-    let api_key = env::var(ENV_DO_PROVIDER)?;
-    let client = reqwest::blocking::Client::new();
+    let client = get_do_api_client()?;
     let resp = client
         .post("https://api.digitalocean.com/v2/kubernetes/clusters")
-        .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
         .json(&new_cluster)
         .send()?;
 
     if resp.status() != StatusCode::CREATED {
-        return Err(anyhow!("Could not create cluster: {}", resp.status()));
-    };
+        println!("{:?}", &resp.text()?.to_string());
+        return Err(anyhow!("Could not create cluster:"));
+    }
 
+    let json_response: KubernetesClusterResponse = resp.json()?;
+
+    let cluster_id = json_response.kubernetes_cluster.id.unwrap();
     let cyan = Style::new().cyan();
-    let json_response: Response = resp.json()?;
-    println!(
-        "Cluster created with id: {}",
-        cyan.apply_to(&json_response.kubernetes_cluster.id)
-    );
+    println!("Cluster created with id: {}", cyan.apply_to(&cluster_id));
 
     let cluster_dir = format!("{}/{}", crate::get_config_dir(), name);
     create_dir(&cluster_dir)?;
 
     let url = format!(
         "https://api.digitalocean.com/v2/kubernetes/clusters/{}/kubeconfig",
-        json_response.kubernetes_cluster.id
+        &cluster_id
     );
 
     // need to wait for the server to be "prepared"
-    let ten_secs = time::Duration::from_secs(10);
-    thread::sleep(ten_secs);
+    thread::sleep(time::Duration::from_secs(10));
 
     let mut resp = client
         .get(&url)
-        .bearer_auth(&api_key)
         .header(CONTENT_TYPE, "application/json")
         .send()?;
 
@@ -100,13 +178,120 @@ pub fn create(name: &str) -> Result<()> {
 
     let mut cluster_uuid = File::create(format!("{}/cluster_uuid", &cluster_dir))?;
 
-    cluster_uuid.write_all(&json_response.kubernetes_cluster.id.as_bytes())?;
+    cluster_uuid.write_all(&cluster_id.as_bytes())?;
+
+    Ok(())
+}
+
+// Return a list of droplets for a given cluster
+fn get_droplets_ids_for_cluster(cluster_id: &str) -> Result<Vec<u32>> {
+    let client = get_do_api_client()?;
+    let resp = client
+        .get(&format!(
+            "https://api.digitalocean.com/v2/kubernetes/clusters/{}",
+            cluster_id
+        ))
+        .header(ACCEPT, "application/json")
+        .send()?;
+
+    let json_response: KubernetesClusterResponse = resp.json()?;
+
+    let mut droplet_ids: Vec<u32> = vec![];
+    for node_pool in json_response.kubernetes_cluster.node_pools.iter() {
+        for node in node_pool.nodes.iter() {
+            if let Some(id) = &node.droplet_id {
+                droplet_ids.push(id.parse::<u32>().unwrap_or(0))
+            }
+        }
+    }
+
+    Ok(droplet_ids)
+}
+
+fn get_api_token() -> Result<String> {
+    Ok(env::var(ENV_DO_PROVIDER)?)
+}
+
+fn auth_headers() -> Result<reqwest::header::HeaderMap> {
+    let api_key = get_api_token()?;
+    let bearer_auth = format!("Bearer {}", &api_key);
+
+    let mut headers = header::HeaderMap::new();
+    headers.insert(
+        header::AUTHORIZATION,
+        header::HeaderValue::from_str(&bearer_auth)?,
+    );
+
+    Ok(headers)
+}
+
+fn get_do_api_client() -> Result<reqwest::blocking::Client> {
+    Ok(reqwest::blocking::Client::builder()
+        .default_headers(auth_headers()?)
+        .build()?)
+}
+
+fn get_load_balancer_pointing_at_droplet_id(
+    droplet_ids: HashSet<u32>,
+) -> Result<Vec<LoadBalancer>> {
+    let client = get_do_api_client()?;
+    let resp = client
+        .get("https://api.digitalocean.com/v2/load_balancers")
+        .header(ACCEPT, "application/json")
+        .send()?;
+
+    let load_balancers: LoadBalancerListResponse = resp.json()?;
+
+    Ok(load_balancers
+        .load_balancers
+        .into_iter()
+        .filter(|lb| lb.droplet_ids.iter().cloned().collect::<HashSet<u32>>() == droplet_ids)
+        .collect())
+}
+
+fn delete_load_balancer(lb: LoadBalancer) -> Result<()> {
+    let lb_id = lb.id.expect("Got an empty id for load_balancer");
+    let cyan = Style::new().cyan();
+    println!("Removing Load Balancer: {}", cyan.apply_to(&lb_id));
+
+    let client = get_do_api_client()?;
+    let resp = client
+        .delete(&format!(
+            "https://api.digitalocean.com/v2/load_balancers/{}",
+            lb_id
+        ))
+        .send()?;
+
+    if resp.status() == StatusCode::NO_CONTENT {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Could not remove Load Balancer with id: {}. Status code is: {}",
+            lb_id,
+            resp.status()
+        ))
+    }
+}
+
+fn delete_residuals(cluster_id: &str) -> Result<()> {
+    let droplet_ids: HashSet<u32> = get_droplets_ids_for_cluster(&cluster_id)?
+        .into_iter()
+        .collect();
+
+    let lbs = get_load_balancer_pointing_at_droplet_id(droplet_ids);
+    match lbs {
+        Ok(lbs) => {
+            for lb in lbs {
+                delete_load_balancer(lb)?;
+            }
+        }
+        _ => {}
+    }
 
     Ok(())
 }
 
 pub fn delete(name: &str) -> Result<()> {
-    let api_key = env::var(ENV_DO_PROVIDER)?;
     let config_dir = crate::get_config_dir();
 
     let doid = format!("{}/{}/cluster_uuid", config_dir, name);
@@ -114,16 +299,80 @@ pub fn delete(name: &str) -> Result<()> {
     let mut cluster_id = String::new();
     file.read_to_string(&mut cluster_id)?;
 
-    let client = reqwest::blocking::Client::new();
-    client
+    delete_residuals(&cluster_id)?;
+
+    let cyan = Style::new().cyan();
+    println!("Removing Cluster: {}", cyan.apply_to(&cluster_id));
+    let client = get_do_api_client()?;
+    let resp = client
         .delete(&format!(
             "https://api.digitalocean.com/v2/kubernetes/clusters/{}",
             cluster_id
         ))
-        .bearer_auth(&api_key)
         .send()?;
+
+    if resp.status() != StatusCode::NO_CONTENT {
+        return Err(anyhow!(
+            "Could not remove Cluster with id: {}. Status code is: {}",
+            &cluster_id,
+            resp.status()
+        ));
+    }
 
     remove_dir_all(format!("{}/{}", config_dir, name))?;
 
     Ok(())
+}
+
+fn parse_metadata(metadata: &str) -> HashMap<String, String> {
+    let fields: Vec<&str> = metadata.split("&").collect();
+    let mut map: HashMap<String, String> = HashMap::new();
+
+    // there should be a more idiomatic way of doing this!
+    for field in fields {
+        let split_field: Vec<&str> = field.split("=").into_iter().collect();
+        if split_field.len() != 2 {
+            continue;
+        }
+
+        map.insert(split_field[0].to_string(), split_field[1].to_string());
+    }
+
+    map
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::r#do;
+    use std::collections::HashMap;
+
+    // Taken from https://stackoverflow.com/a/27582993/75928
+    macro_rules! map(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key, $value);
+            )+
+            m
+        }
+    };
+    );
+
+    #[test]
+    fn test_parse_metadata() {
+        assert_eq!(
+            r#do::parse_metadata("region=lon1"),
+            map! { "region".to_string() => "lon1".to_string() }
+        );
+
+        assert_eq!(
+            r#do::parse_metadata("region=lon1&attr1=value1"),
+            map! { "region".to_string() => "lon1".to_string(), "attr1".to_string() => "value1".to_string() }
+        );
+
+        assert_eq!(r#do::parse_metadata("region"), HashMap::new());
+        assert_eq!(r#do::parse_metadata("&"), HashMap::new());
+        assert_eq!(r#do::parse_metadata(""), HashMap::new());
+    }
 }

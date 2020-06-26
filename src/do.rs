@@ -200,7 +200,7 @@ fn get_droplets_ids_for_cluster(cluster_id: &str) -> Result<Vec<u32>> {
     for node_pool in json_response.kubernetes_cluster.node_pools.iter() {
         for node in node_pool.nodes.iter() {
             if let Some(id) = &node.droplet_id {
-                droplet_ids.push(id.parse::<u32>()?)
+                droplet_ids.push(id.parse::<u32>().unwrap_or(0))
             }
         }
     }
